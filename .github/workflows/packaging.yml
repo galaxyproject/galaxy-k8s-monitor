@@ -35,7 +35,7 @@ jobs:
         with:
           chart-name: chart
           charts-repo: cloudve/helm-charts
-          github-token: ${{ secrets.CHARTS_TOKEN }}
+          github-token: ${{ github.token }}
           charts-token: ${{ secrets.CHARTS_TOKEN }}
           github-labels: ${{ join(github.event.pull_request.labels.*.name, ', ') }}
           git-branch: ${{ github.event.pull_request.base.ref }}
@@ -53,7 +53,7 @@ jobs:
         with:
           chart-name: chart
           charts-repo: cloudve/helm-charts
-          github-token: ${{ secrets.CHARTS_TOKEN }}
+          github-token: ${{ github.token }}
           charts-token: ${{ secrets.CHARTS_TOKEN }}
           github-labels: ${{ github.event.inputs.version-bump }}
           git-branch: ${{ github.event.inputs.branch-name }}
