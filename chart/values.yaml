@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: galaxy-k8s-monitor
+  repository: afgane/galaxy-k8s-monitor
   tag: latest
   pullPolicy: IfNotPresent
 
@@ -24,7 +24,13 @@ ingress:
           pathType: Prefix
   tls: []
 
-resources: {}
+resources:
+  requests:
+    cpu: 50m
+    memory: 50Mi
+  limits:
+    cpu: 50m
+    memory: 50Mi
 
 monitor:
   namespace: galaxy

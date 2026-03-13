@@ -24,7 +24,13 @@ ingress:
           pathType: ImplementationSpecific
   tls: []
 
-resources: {}
+resources:
+  requests:
+    cpu: 50m
+    memory: 50Mi
+  limits:
+    cpu: 50m
+    memory: 50Mi
 
 monitor:
   namespace: galaxy
