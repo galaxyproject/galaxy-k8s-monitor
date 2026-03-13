@@ -3,6 +3,9 @@ name: Package and publish the chart
 on:
   pull_request_target:
     types: [closed]
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       manual-package-invocation:
@@ -62,10 +65,31 @@ jobs:
           github-labels: ${{ github.event.inputs.version-bump }}
           git-branch: ${{ github.event.inputs.branch-name }}
 
+  package-from-push:
+    if: github.event_name == 'push' && github.ref_name == 'main' && !startsWith(github.event.head_commit.message, 'Automatic Version Bumping')
+    name: Package and push from main
+    runs-on: ubuntu-latest
+    env:
+      CHARTS_BRANCH: master
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.ref_name }}
+      - uses: cloudve/helm-ci@master
+        with:
+          chart-name: chart
+          charts-repo: cloudve/helm-charts
+          github-token: ${{ github.token }}
+          charts-token: ${{ secrets.CHARTS_TOKEN }}
+          github-labels: ""
+          git-branch: ${{ github.ref_name }}
+
   tag-and-release:
-    needs: [package-from-pr, package-from-manual]
+    needs: [package-from-pr, package-from-manual, package-from-push]
     if: |
-      always()
+      github.event_name != 'push'
+      && always()
       && contains(needs.*.result, 'success')
       && !contains(needs.*.result, 'failure')
     name: Create a tag and GitHub release for this version
