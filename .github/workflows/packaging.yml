@@ -6,17 +6,17 @@ on:
   workflow_dispatch:
     inputs:
       manual-package-invocation:
-        description: Package (y/n)?
+        description: "Package (y/n)?"
         required: true
-        default: y
+        default: "y"
       version-bump:
-        description: Version bump: major, minor, patch
+        description: "Version bump: major, minor, patch"
         required: true
-        default: patch
+        default: "patch"
       branch-name:
-        description: Branch name to package
+        description: "Branch name to package"
         required: true
-        default: main
+        default: "main"
 
 permissions:
   contents: write
