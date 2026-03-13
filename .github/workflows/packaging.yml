@@ -26,6 +26,8 @@ jobs:
     if: github.event.pull_request.merged == true
     name: Package and push from PR
     runs-on: ubuntu-latest
+    env:
+      CHARTS_BRANCH: master
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,6 +46,8 @@ jobs:
     if: github.event.inputs.manual-package-invocation == 'y'
     name: Package and push manual invocation
     runs-on: ubuntu-latest
+    env:
+      CHARTS_BRANCH: master
     steps:
       - uses: actions/checkout@v4
         with:
