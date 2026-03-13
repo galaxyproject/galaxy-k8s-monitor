@@ -1,0 +1,26 @@
+@media print {
+  @page {
+    margin: 10mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  [data-print-content],
+  [data-print-content] * {
+    visibility: visible !important;
+  }
+
+  [data-print-content] {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+}

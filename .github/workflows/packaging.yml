@@ -1,0 +1,91 @@
+name: Package and publish the chart
+
+on:
+  pull_request_target:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      manual-package-invocation:
+        description: Package (y/n)?
+        required: true
+        default: y
+      version-bump:
+        description: Version bump: major, minor, patch
+        required: true
+        default: patch
+      branch-name:
+        description: Branch name to package
+        required: true
+        default: main
+
+permissions:
+  contents: write
+
+jobs:
+  package-from-pr:
+    if: github.event.pull_request.merged == true
+    name: Package and push from PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.ref }}
+      - uses: cloudve/helm-ci@master
+        with:
+          chart-name: chart
+          charts-repo: cloudve/helm-charts
+          github-token: ${{ secrets.CHARTS_TOKEN }}
+          charts-token: ${{ secrets.CHARTS_TOKEN }}
+          github-labels: ${{ join(github.event.pull_request.labels.*.name, ', ') }}
+          git-branch: ${{ github.event.pull_request.base.ref }}
+
+  package-from-manual:
+    if: github.event.inputs.manual-package-invocation == 'y'
+    name: Package and push manual invocation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.inputs.branch-name }}
+      - uses: cloudve/helm-ci@master
+        with:
+          chart-name: chart
+          charts-repo: cloudve/helm-charts
+          github-token: ${{ secrets.CHARTS_TOKEN }}
+          charts-token: ${{ secrets.CHARTS_TOKEN }}
+          github-labels: ${{ github.event.inputs.version-bump }}
+          git-branch: ${{ github.event.inputs.branch-name }}
+
+  tag-and-release:
+    needs: [package-from-pr, package-from-manual]
+    if: |
+      always()
+      && contains(needs.*.result, 'success')
+      && !contains(needs.*.result, 'failure')
+    name: Create a tag and GitHub release for this version
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_BRANCH: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.ref || github.event.inputs.branch-name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_BRANCH }}
+      - name: Tag and release
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "<>"
+          version="v$(awk '/^version:/{print $2}' chart/Chart.yaml)"
+          if git rev-parse "$version" >/dev/null 2>&1; then
+            echo "Tag $version already exists"
+            exit 0
+          fi
+          git tag -a "$version" -m "Automatic release of $version"
+          git push origin "$version"
+          if gh release view "$version" >/dev/null 2>&1; then
+            echo "Release $version already exists"
+            exit 0
+          fi
+          gh release create "$version" --generate-notes --latest

@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "galaxy-k8s-monitor.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "galaxy-k8s-monitor.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "galaxy-k8s-monitor.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "galaxy-k8s-monitor.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      serviceAccountName: {{ include "galaxy-k8s-monitor.serviceAccountName" . }}
+      containers:
+        - name: galaxy-k8s-monitor
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "--namespace"
+            - "{{ .Values.monitor.namespace }}"
+            - "--interval"
+            - "{{ .Values.monitor.intervalSeconds }}s"
+            - "--retention-hours"
+            - "{{ .Values.monitor.retentionHours }}"
+            - "--address"
+            - ":8080"
+            - "--base-path"
+            - "{{ .Values.monitor.basePath }}"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          resources:
+{{ toYaml .Values.resources | indent 12 }}

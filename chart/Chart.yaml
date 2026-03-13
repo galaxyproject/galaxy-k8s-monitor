@@ -1,0 +1,6 @@
+apiVersion: v2
+name: galaxy-k8s-monitor
+description: Real-time Kubernetes pod resource monitor for Galaxy namespaces
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,33 @@
+replicaCount: 1
+
+image:
+  repository: afgane/galaxy-k8s-monitor
+  tag: latest
+  pullPolicy: Always
+
+serviceAccount:
+  create: true
+  name: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: ""
+      paths:
+        - path: /monitor
+          pathType: ImplementationSpecific
+  tls: []
+
+resources: {}
+
+monitor:
+  namespace: galaxy
+  intervalSeconds: 30
+  retentionHours: 24
+  basePath: /monitor
