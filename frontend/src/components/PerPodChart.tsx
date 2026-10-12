@@ -33,7 +33,7 @@ type Props = {
 // Keep the timeline's plot column aligned with every bordered pod row.
 const rowLayout: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: '180px minmax(0, 1fr)',
+  gridTemplateColumns: '220px minmax(0, 1fr)',
   alignItems: 'center',
   gap: 8,
   border: '1px solid transparent',
@@ -72,7 +72,8 @@ function PerPodTooltip({
 
 export default function PerPodChart({ title, series, unit, onPointClick, activeRelativeTime, zoomRange }: Props) {
   const [collapsed, setCollapsed] = React.useState(false);
-  const formatValue = (value: number): string => `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })}${unit}`;
+  const formatNumber = (value: number): string => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const formatValue = (value: number): string => `${formatNumber(value)}${unit}`;
   const percentOfRequest = (value: number, request: number): string => {
     if (request <= 0) {
       return 'n/a';
@@ -156,8 +157,17 @@ export default function PerPodChart({ title, series, unit, onPointClick, activeR
 
             const currentUsage = displayedPoints[displayedPoints.length - 1]?.usage ?? 0;
             const maxRecorded = displayedPoints.reduce((max, point) => Math.max(max, point.usage), 0);
-            const isCurrentOverRequest = podSeries.request > 0 && currentUsage > podSeries.request;
-            const isMaxOverRequest = podSeries.request > 0 && maxRecorded > podSeries.request;
+            const averageUsage = displayedPoints.length > 0
+              ? displayedPoints.reduce((sum, point) => sum + point.usage, 0) / displayedPoints.length
+              : 0;
+            const sortedUsage = displayedPoints.map(point => point.usage).sort((left, right) => left - right);
+            const p95Usage = sortedUsage[Math.ceil(sortedUsage.length * 0.95) - 1] ?? 0;
+            const summaryMetrics = [
+              { label: 'Current', description: 'Current usage', value: currentUsage },
+              { label: 'Avg', description: 'Average usage over the displayed time range', value: averageUsage },
+              { label: 'P95', description: '95th percentile usage over the displayed time range (nearest rank)', value: p95Usage },
+              { label: 'Max', description: 'Maximum usage over the displayed time range', value: maxRecorded }
+            ];
 
             return (
           <div
@@ -168,12 +178,33 @@ export default function PerPodChart({ title, series, unit, onPointClick, activeR
               borderRadius: 8
             }}
           >
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {podSeries.name}
+            <div style={{ minWidth: 0, height: 64, display: 'grid', gridTemplateRows: '18px 1fr', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, lineHeight: '18px' }}>
+                <div title={podSeries.name} style={{ minWidth: 0, flex: 1, fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {podSeries.name}
+                </div>
+                <div title={`Request: ${formatValue(podSeries.request)}. All usage values are in ${unit.trim()}.`} style={{ flexShrink: 0, fontSize: 10, color: '#64748b', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                  Req: {formatValue(podSeries.request)}
+                </div>
               </div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>
-                Current: <span style={{ color: isCurrentOverRequest ? '#FC3841' : 'inherit' }}>{formatValue(currentUsage)} ({percentOfRequest(currentUsage, podSeries.request)})</span> · Req: {formatValue(podSeries.request)} · <span title="Max recorded value">Max: <span style={{ color: isMaxOverRequest ? '#FC3841' : 'inherit' }}>{formatValue(maxRecorded)} ({percentOfRequest(maxRecorded, podSeries.request)})</span></span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 4, fontVariantNumeric: 'tabular-nums' }}>
+                {summaryMetrics.map(metric => {
+                  const isOverRequest = podSeries.request > 0 && metric.value > podSeries.request;
+                  const percentage = percentOfRequest(metric.value, podSeries.request);
+                  const description = `${metric.description}: ${formatValue(metric.value)}. ${podSeries.request > 0 ? `${percentage} of request.` : 'No request configured.'}`;
+
+                  return (
+                    <div key={metric.label} title={description} style={{ minWidth: 0, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: 10, lineHeight: '12px', color: '#64748b' }}>{metric.label}</div>
+                      <div style={{ fontSize: 12, lineHeight: '16px', fontWeight: 600, color: isOverRequest ? '#FC3841' : '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {formatNumber(metric.value)}
+                      </div>
+                      <div style={{ fontSize: 10, lineHeight: '12px', color: isOverRequest ? '#FC3841' : '#64748b', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {percentage}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
