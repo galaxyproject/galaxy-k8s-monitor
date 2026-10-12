@@ -4,6 +4,7 @@ import {
   AreaChart,
   CartesianGrid,
   Line,
+  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -27,6 +28,16 @@ type Props = {
   onPointClick?: (sampleIndex: number) => void;
   activeRelativeTime?: string;
   zoomRange?: { startSampleIndex: number; endSampleIndex: number } | null;
+};
+
+// Keep the timeline's plot column aligned with every bordered pod row.
+const rowLayout: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '180px minmax(0, 1fr)',
+  alignItems: 'center',
+  gap: 8,
+  border: '1px solid transparent',
+  padding: '6px 8px'
 };
 
 function PerPodTooltip({
@@ -70,12 +81,16 @@ export default function PerPodChart({ title, series, unit, onPointClick, activeR
     return `${Math.round((value / request) * 100)}%`;
   };
 
+  const displayedPointsFor = (seriesRow: Series) => zoomRange
+    ? seriesRow.points.filter(
+        point => point.sampleIndex >= zoomRange.startSampleIndex && point.sampleIndex <= zoomRange.endSampleIndex
+      )
+    : seriesRow.points;
+
+  const timelinePoints = series.length > 0 ? displayedPointsFor(series[0]) : [];
+
   const withInverseOverflow = (seriesRow: Series) => {
-    const visiblePoints = zoomRange
-      ? seriesRow.points.filter(
-          point => point.sampleIndex >= zoomRange.startSampleIndex && point.sampleIndex <= zoomRange.endSampleIndex
-        )
-      : seriesRow.points;
+    const visiblePoints = displayedPointsFor(seriesRow);
 
     if (visiblePoints.length === 0) {
       return [] as Array<Series['points'][number] & { displayUsage: number; currentUsage: number; overflowFloor: number }>;
@@ -135,13 +150,9 @@ export default function PerPodChart({ title, series, unit, onPointClick, activeR
       </div>
       {!collapsed && (
       <div style={{ display: 'grid', gap: 8 }}>
-        {series.map((podSeries, index) => (
+        {series.map(podSeries => (
           (() => {
-            const displayedPoints = zoomRange
-              ? podSeries.points.filter(
-                  point => point.sampleIndex >= zoomRange.startSampleIndex && point.sampleIndex <= zoomRange.endSampleIndex
-                )
-              : podSeries.points;
+            const displayedPoints = displayedPointsFor(podSeries);
 
             const currentUsage = displayedPoints[displayedPoints.length - 1]?.usage ?? 0;
             const maxRecorded = displayedPoints.reduce((max, point) => Math.max(max, point.usage), 0);
@@ -152,13 +163,9 @@ export default function PerPodChart({ title, series, unit, onPointClick, activeR
           <div
             key={podSeries.name}
             style={{
-              display: 'grid',
-              gridTemplateColumns: '180px minmax(0, 1fr)',
-              alignItems: 'center',
-              gap: 8,
+              ...rowLayout,
               border: '1px solid #e2e8f0',
-              borderRadius: 8,
-              padding: '6px 8px'
+              borderRadius: 8
             }}
           >
             <div style={{ minWidth: 0 }}>
@@ -186,9 +193,7 @@ export default function PerPodChart({ title, series, unit, onPointClick, activeR
                   <CartesianGrid strokeDasharray="2 2" vertical={false} />
                   <XAxis
                     dataKey="relativeTime"
-                    hide={index !== series.length - 1}
-                    interval="preserveStartEnd"
-                    minTickGap={36}
+                    hide
                   />
                   <YAxis hide domain={[0, podSeries.request > 0 ? podSeries.request : podSeries.axisCeiling]} />
                   <Tooltip
@@ -245,6 +250,37 @@ export default function PerPodChart({ title, series, unit, onPointClick, activeR
             );
           })()
         ))}
+        {timelinePoints.length > 0 && (
+          <div style={rowLayout}>
+            <div style={{ fontSize: 12, color: '#64748b' }}>Elapsed time</div>
+            <div style={{ height: 36, minWidth: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={timelinePoints} margin={{ top: 0, right: 8, left: 8, bottom: 2 }}>
+                  <XAxis
+                    dataKey="relativeTime"
+                    height={30}
+                    tick={({ x, y, payload }) => (
+                      <text
+                        x={x}
+                        y={y}
+                        dy="0.71em"
+                        fontSize={12}
+                        fill="#666"
+                        textAnchor={payload.value === timelinePoints[0].relativeTime
+                          ? 'start'
+                          : payload.value === timelinePoints[timelinePoints.length - 1].relativeTime ? 'end' : 'middle'}
+                      >
+                        {payload.value}
+                      </text>
+                    )}
+                    interval="preserveStartEnd"
+                    minTickGap={36}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
       </div>
       )}
     </section>
