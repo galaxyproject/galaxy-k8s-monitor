@@ -1,10 +1,31 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Activity,
+  AlertCircle,
+  AlertTriangle,
+  Download,
+  FileText,
+  Loader2,
+  Printer,
+  Radio,
+  RotateCcw,
+  SlidersHorizontal,
+  Trash2,
+  Upload,
+  X
+} from 'lucide-react';
 import Dashboard from './components/Dashboard';
-import PodGroupFilter from './components/PodGroupFilter';
+import PodGroupFilter, { isGalaxyGroup, type Timeframe } from './components/PodGroupFilter';
 import { useMetrics } from './hooks/useMetrics';
+import { updateGroupColorMap, type GroupColorMap } from './lib/colors';
 import type { ConfigResponse, PodSample, Sample } from './lib/types';
 
-type Timeframe = '10m' | '1h' | '8h' | 'all';
+const TIMEFRAME_LABELS: Record<Timeframe, string> = {
+  '10m': '10m',
+  '1h': '1h',
+  '8h': '8h',
+  all: 'All'
+};
 
 function isPodSample(value: unknown): value is PodSample {
   if (!value || typeof value !== 'object') {
@@ -69,20 +90,28 @@ function extractUploadedData(raw: unknown): { samples: Sample[]; config: ConfigR
     }
   }
 
-  throw new Error('Uploaded JSON must be either a Sample[] array or an object with a valid samples array.');
+  throw new Error(
+    'Uploaded JSON must be either a Sample[] array or an object with a valid samples array.'
+  );
 }
 
 export default function App() {
   const [uploadedSamples, setUploadedSamples] = useState<Sample[] | null>(null);
   const [uploadedConfig, setUploadedConfig] = useState<ConfigResponse | null>(null);
+  const [uploadedFilename, setUploadedFilename] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [purgedAtMs, setPurgedAtMs] = useState<number | null>(null);
   const [resetZoomSignal, setResetZoomSignal] = useState(0);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [groupColorMap, setGroupColorMap] = useState<GroupColorMap>({});
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const isStaticMode = uploadedSamples !== null;
-  const { samples: liveSamples, config: liveConfig, loading, error } = useMetrics({ enabled: !isStaticMode });
+  const { samples: liveSamples, config: liveConfig, loading, error } = useMetrics({
+    enabled: !isStaticMode
+  });
   const sourceSamples = isStaticMode ? (uploadedSamples ?? []) : liveSamples;
+
   const samples = useMemo(() => {
     if (isStaticMode || purgedAtMs === null) {
       return sourceSamples;
@@ -90,6 +119,7 @@ export default function App() {
 
     return sourceSamples.filter(sample => new Date(sample.timestamp).getTime() >= purgedAtMs);
   }, [isStaticMode, purgedAtMs, sourceSamples]);
+
   const config = isStaticMode ? uploadedConfig : liveConfig;
 
   const allGroups = useMemo(() => {
@@ -97,14 +127,36 @@ export default function App() {
     if (config) {
       config.podGroups.forEach(group => set.add(group));
     }
-    samples.forEach(sample => sample.pods.forEach(pod => set.add(pod.name)));
+    sourceSamples.forEach(sample => sample.pods.forEach(pod => set.add(pod.name)));
     return Array.from(set).sort((left, right) => left.localeCompare(right));
-  }, [config, samples]);
+  }, [config, sourceSamples]);
+
+  useEffect(() => {
+    if (allGroups.length === 0) {
+      return;
+    }
+    setGroupColorMap(previous => updateGroupColorMap(previous, allGroups));
+  }, [allGroups, updateGroupColorMap]);
 
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>('all');
   const hasInitializedSelection = useRef(false);
   const hasUserInteracted = useRef(false);
+
+  useEffect(() => {
+    if (!mobileFiltersOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileFiltersOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobileFiltersOpen]);
 
   const filteredSamples = useMemo(() => {
     if (selectedTimeframe === 'all' || samples.length === 0) {
@@ -124,8 +176,12 @@ export default function App() {
   }, [samples, selectedTimeframe]);
 
   useEffect(() => {
+    if (allGroups.length === 0) {
+      return;
+    }
+
     setSelectedGroups(previous => {
-      if (!hasInitializedSelection.current && allGroups.length > 0) {
+      if (!hasUserInteracted.current || !hasInitializedSelection.current) {
         hasInitializedSelection.current = true;
         return new Set(allGroups);
       }
@@ -138,12 +194,6 @@ export default function App() {
       const next = new Set<string>();
       for (const group of previous) {
         if (available.has(group)) {
-          next.add(group);
-        }
-      }
-
-      if (!hasUserInteracted.current && allGroups.length > 0) {
-        for (const group of allGroups) {
           next.add(group);
         }
       }
@@ -166,7 +216,8 @@ export default function App() {
   };
 
   const selectAll = () => {
-    hasUserInteracted.current = true;
+    hasUserInteracted.current = false;
+    hasInitializedSelection.current = true;
     setSelectedGroups(new Set(allGroups));
   };
 
@@ -176,9 +227,11 @@ export default function App() {
   };
 
   const selectGalaxy = () => {
+    const nextSelection = allGroups.filter(isGalaxyGroup);
+    if (nextSelection.length === 0) {
+      return;
+    }
     hasUserInteracted.current = true;
-    const galaxyTargets = new Set(['galaxy-web', 'galaxy-workflow', 'galaxy-job']);
-    const nextSelection = allGroups.filter(group => galaxyTargets.has(group));
     setSelectedGroups(new Set(nextSelection));
   };
 
@@ -196,8 +249,12 @@ export default function App() {
   };
 
   const clearUploadedData = () => {
+    hasInitializedSelection.current = false;
+    hasUserInteracted.current = false;
+    setGroupColorMap({});
     setUploadedSamples(null);
     setUploadedConfig(null);
+    setUploadedFilename(null);
     setUploadError(null);
     setPurgedAtMs(null);
     setResetZoomSignal(previous => previous + 1);
@@ -206,18 +263,19 @@ export default function App() {
     }
   };
 
-  const resetCurrentData = () => {
-    const confirmed = window.confirm('This will purge all currently displayed data. Continue?');
+  const clearLiveHistory = () => {
+    const confirmed = window.confirm(
+      'Hide all live samples collected up to now? You can restore the in-memory history at any time.'
+    );
     if (!confirmed) {
       return;
     }
 
-    if (isStaticMode) {
-      setUploadedSamples([]);
-      return;
-    }
-
     setPurgedAtMs(Date.now());
+  };
+
+  const restoreLiveHistory = () => {
+    setPurgedAtMs(null);
   };
 
   const handleUploadData = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -235,22 +293,33 @@ export default function App() {
         throw new Error('Uploaded file has no samples.');
       }
 
-      const sortedSamples = [...extracted.samples].sort((left, right) =>
-        new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime()
+      const sortedSamples = [...extracted.samples].sort(
+        (left, right) =>
+          new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime()
       );
 
+      hasInitializedSelection.current = false;
+      hasUserInteracted.current = false;
+      setGroupColorMap({});
       setUploadedSamples(sortedSamples);
-      setUploadedConfig(extracted.config ?? {
-        namespace: 'uploaded-data',
-        intervalSeconds: 0,
-        retentionHours: 0,
-        basePath: '',
-        podGroups: []
-      });
+      setUploadedFilename(file.name);
+      setUploadedConfig(
+        extracted.config ?? {
+          namespace: 'uploaded-data',
+          intervalSeconds: 0,
+          retentionHours: 0,
+          basePath: '',
+          podGroups: []
+        }
+      );
       setUploadError(null);
       setSelectedTimeframe('all');
+      setResetZoomSignal(previous => previous + 1);
     } catch (caughtError) {
-      const message = caughtError instanceof Error ? caughtError.message : 'Could not parse uploaded data file.';
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Could not parse uploaded data file.';
       setUploadError(message);
     } finally {
       event.target.value = '';
@@ -276,16 +345,24 @@ export default function App() {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
     anchor.href = url;
-    anchor.download = `galaxy-vm-monitor-raw-usage-${timestamp}.json`;
+    anchor.download = `galaxy-k8s-monitor-raw-usage-${timestamp}.json`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
   };
 
+  const sourceLabel = isStaticMode
+    ? `Uploaded snapshot (${uploadedFilename ?? 'file'})`
+    : 'Live stream';
+
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', background: '#f5f7fb', minHeight: '100vh', color: '#111827' }}>
-      <header data-no-print style={{ padding: '16px 20px', borderBottom: '1px solid #dbe1ea', background: '#fff' }}>
+    <div>
+      <a href="#main" className="skip-link" data-no-print>
+        Skip to main content
+      </a>
+
+      <header className="masthead" data-no-print>
         <input
           ref={uploadInputRef}
           type="file"
@@ -293,111 +370,70 @@ export default function App() {
           onChange={handleUploadData}
           style={{ display: 'none' }}
         />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 24 }}>Galaxy VM Monitor</h1>
-            <div style={{ marginTop: 6, color: '#4b5563', fontSize: 14, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-              <span>Namespace: {config?.namespace ?? '-'} • Interval: {config?.intervalSeconds ?? '-'}s • Retention: {config?.retentionHours ?? '-'}h • Data points: {samples.length.toLocaleString()} • Source: {isStaticMode ? 'Uploaded static file' : 'Live stream'}</span>
-              <button
-                type="button"
-                onClick={resetCurrentData}
-                style={{
-                  border: '1px solid #cbd5e1',
-                  background: '#f8fafc',
-                  color: '#334155',
-                  borderRadius: 999,
-                  padding: '2px 8px',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                Reset data
-              </button>
-            </div>
+        <div className="masthead-inner">
+          <div className="brand">
+            <Activity size={22} aria-hidden="true" />
+            <span>Galaxy K8s Monitor</span>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={openUploadPicker}
-              style={{
-                border: '1px solid #cbd5e1',
-                background: '#f8fafc',
-                color: '#334155',
-                borderRadius: 999,
-                padding: '7px 12px',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              Upload data
-            </button>
-            {isStaticMode && (
-              <button
-                type="button"
-                onClick={clearUploadedData}
-                style={{
-                  border: '1px solid #cbd5e1',
-                  background: '#f8fafc',
-                  color: '#334155',
-                  borderRadius: 999,
-                  padding: '7px 12px',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                Return to live
-              </button>
+
+          <div className="masthead-status">
+            {isStaticMode ? (
+              <>
+                <span className="mode-badge" data-mode="uploaded">
+                  <FileText size={15} aria-hidden="true" />
+                  <span
+                    className="mode-badge-text"
+                    title={`Uploaded snapshot · ${uploadedFilename ?? 'file'}`}
+                  >
+                    Uploaded snapshot · {uploadedFilename ?? 'file'}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="btn-masthead"
+                  onClick={clearUploadedData}
+                >
+                  <Radio size={15} aria-hidden="true" />
+                  <span>Return to live</span>
+                </button>
+              </>
+            ) : (
+              <span className="mode-badge" data-mode="live">
+                <span className="live-dot" aria-hidden="true" />
+                <span>Live stream</span>
+              </span>
             )}
-            <button
-              type="button"
-              onClick={downloadRawData}
-              style={{
-                border: '1px solid #cbd5e1',
-                background: '#f8fafc',
-                color: '#334155',
-                borderRadius: 999,
-                padding: '7px 12px',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              Download raw data
-            </button>
-            <button
-              type="button"
-              onClick={saveAsPdf}
-              style={{
-                border: '1px solid #cbd5e1',
-                background: '#f8fafc',
-                color: '#334155',
-                borderRadius: 999,
-                padding: '7px 12px',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              Save as PDF
-            </button>
           </div>
         </div>
       </header>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, padding: 16, alignItems: 'flex-start' }}>
-        <div data-no-print style={{ flex: '0 0 280px', width: 280 }}>
+      <div className="shell">
+        <button
+          type="button"
+          className="drawer-toggle"
+          data-no-print
+          aria-expanded={mobileFiltersOpen}
+          aria-controls="filter-sidebar"
+          onClick={() => setMobileFiltersOpen(previous => !previous)}
+        >
+          <SlidersHorizontal size={16} aria-hidden="true" />
+          <span>Filters</span>
+          <span className="count-pill">
+            {selectedGroups.size}/{allGroups.length} · {TIMEFRAME_LABELS[selectedTimeframe]}
+          </span>
+        </button>
+
+        <div
+          id="filter-sidebar"
+          className="sidebar-wrap"
+          data-open={mobileFiltersOpen ? 'true' : 'false'}
+          data-no-print
+        >
           <PodGroupFilter
             podGroups={allGroups}
             selectedGroups={selectedGroups}
             selectedTimeframe={selectedTimeframe}
+            groupColorMap={groupColorMap}
             onToggleGroup={toggleGroup}
             onSelectOnly={selectOnly}
             onSelectAll={selectAll}
@@ -407,12 +443,229 @@ export default function App() {
           />
         </div>
 
-        <div style={{ minWidth: 0, flex: '1 1 900px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {!isStaticMode && loading && <div data-no-print style={{ marginBottom: 12 }}>Loading metrics...</div>}
-          {!isStaticMode && error && <div data-no-print style={{ marginBottom: 12, color: '#b91c1c' }}>{error}</div>}
-          {uploadError && <div data-no-print style={{ marginBottom: 12, color: '#b91c1c' }}>{uploadError}</div>}
-          <Dashboard samples={filteredSamples} selectedGroups={selectedGroups} resetZoomSignal={resetZoomSignal} />
-        </div>
+        <main id="main" className="page">
+          <div className="page-header" data-no-print>
+            <div className="page-heading-group">
+              <h1 className="page-title">Galaxy K8s Monitor</h1>
+              <p className="telemetry-meta">
+                <span>
+                  Namespace: <strong>{config?.namespace ?? '-'}</strong>
+                </span>
+                <span className="meta-sep" aria-hidden="true">•</span>
+                <span>
+                  Interval:{' '}
+                  <strong>
+                    {config?.intervalSeconds ? `${config.intervalSeconds}s` : '-'}
+                  </strong>
+                </span>
+                <span className="meta-sep" aria-hidden="true">•</span>
+                <span>
+                  Retention:{' '}
+                  <strong>
+                    {config?.retentionHours ? `${config.retentionHours}h` : '-'}
+                  </strong>
+                </span>
+                <span className="meta-sep" aria-hidden="true">•</span>
+                <span>
+                  Data points:{' '}
+                  <strong className="tabular-nums">
+                    {filteredSamples.length.toLocaleString()}
+                  </strong>
+                  {filteredSamples.length !== samples.length
+                    ? ` (of ${samples.length.toLocaleString()})`
+                    : ''}
+                </span>
+                <span className="meta-sep" aria-hidden="true">•</span>
+                <span>
+                  Source: <strong>{sourceLabel}</strong>
+                </span>
+              </p>
+            </div>
+
+            <div className="toolbar-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={openUploadPicker}
+              >
+                <Upload size={16} aria-hidden="true" />
+                <span>Upload data</span>
+              </button>
+
+              {isStaticMode && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={clearUploadedData}
+                >
+                  <Radio size={16} aria-hidden="true" />
+                  <span>Return to live</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={downloadRawData}
+                disabled={samples.length === 0}
+              >
+                <Download size={16} aria-hidden="true" />
+                <span>Download raw data</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={saveAsPdf}
+                disabled={filteredSamples.length === 0}
+              >
+                <Printer size={16} aria-hidden="true" />
+                <span>Save as PDF</span>
+              </button>
+
+              {!isStaticMode && purgedAtMs !== null && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={restoreLiveHistory}
+                >
+                  <RotateCcw size={16} aria-hidden="true" />
+                  <span>Restore history</span>
+                </button>
+              )}
+
+              {!isStaticMode && purgedAtMs === null && sourceSamples.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-destructive"
+                  onClick={clearLiveHistory}
+                >
+                  <Trash2 size={16} aria-hidden="true" />
+                  <span>Clear history</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {uploadError && (
+            <div
+              className="status-banner"
+              data-variant="error"
+              data-no-print
+              role="alert"
+            >
+              <div className="status-banner-content">
+                <AlertCircle size={18} color="var(--monitor-overdraw)" aria-hidden="true" />
+                <div>
+                  <strong>Upload failed:</strong> {uploadError}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-compact"
+                onClick={() => setUploadError(null)}
+                aria-label="Dismiss upload error"
+              >
+                <X size={14} aria-hidden="true" />
+                <span>Dismiss</span>
+              </button>
+            </div>
+          )}
+
+          {!isStaticMode && loading && sourceSamples.length === 0 && (
+            <div
+              className="status-banner"
+              data-variant="info"
+              data-no-print
+              role="status"
+            >
+              <div className="status-banner-content">
+                <Loader2
+                  size={18}
+                  className="spin"
+                  color="var(--monitor-primary)"
+                  aria-hidden="true"
+                />
+                <span>Loading cluster telemetry…</span>
+              </div>
+            </div>
+          )}
+
+          {!isStaticMode && error && (
+            <div
+              className="status-banner"
+              data-variant={sourceSamples.length > 0 ? 'warning' : 'error'}
+              data-no-print
+              role={sourceSamples.length > 0 ? 'status' : 'alert'}
+            >
+              <div className="status-banner-content">
+                {sourceSamples.length > 0 ? (
+                  <AlertTriangle
+                    size={18}
+                    color="var(--monitor-warning-border)"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <AlertCircle
+                    size={18}
+                    color="var(--monitor-overdraw)"
+                    aria-hidden="true"
+                  />
+                )}
+                <div>
+                  <strong>{error}</strong>
+                  {sourceSamples.length > 0 && (
+                    <span>
+                      {' '}
+                      — Displaying last received telemetry ({sourceSamples.length.toLocaleString()}{' '}
+                      samples) while waiting for the stream to reconnect.
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!isStaticMode && purgedAtMs !== null && (
+            <div
+              className="status-banner"
+              data-variant="info"
+              data-no-print
+              role="status"
+            >
+              <div className="status-banner-content">
+                <span>
+                  Showing live samples collected since{' '}
+                  <strong>{new Date(purgedAtMs).toLocaleTimeString()}</strong> (
+                  {samples.length.toLocaleString()} of {sourceSamples.length.toLocaleString()}{' '}
+                  in-memory samples).
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn-compact"
+                onClick={restoreLiveHistory}
+              >
+                <RotateCcw size={14} aria-hidden="true" />
+                <span>Restore history</span>
+              </button>
+            </div>
+          )}
+
+          <Dashboard
+            samples={filteredSamples}
+            selectedGroups={selectedGroups}
+            totalGroupCount={allGroups.length}
+            groupColorMap={groupColorMap}
+            resetZoomSignal={resetZoomSignal}
+            onSelectAllGroups={selectAll}
+            printMetadata={{
+              namespace: config?.namespace ?? '-',
+              timeframeLabel: TIMEFRAME_LABELS[selectedTimeframe],
+              sourceLabel
+            }}
+          />
+        </main>
       </div>
     </div>
   );

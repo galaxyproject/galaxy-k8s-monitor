@@ -57,7 +57,16 @@ export function useMetrics(options: UseMetricsOptions = {}): UseMetricsResult {
         }
 
         eventSource = new EventSource('api/stream');
+        eventSource.onopen = () => {
+          if (!isCancelled) {
+            setError(null);
+          }
+        };
         eventSource.addEventListener('sample', event => {
+          if (isCancelled) {
+            return;
+          }
+          setError(null);
           const nextSample = JSON.parse((event as MessageEvent).data) as Sample;
           setSamples(previous => {
             const updated = [...previous, nextSample];
@@ -69,7 +78,9 @@ export function useMetrics(options: UseMetricsOptions = {}): UseMetricsResult {
         });
 
         eventSource.onerror = () => {
-          setError('Live stream disconnected. Retrying automatically...');
+          if (!isCancelled) {
+            setError('Live stream disconnected. Retrying automatically...');
+          }
         };
 
         setError(null);

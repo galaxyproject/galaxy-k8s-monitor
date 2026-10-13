@@ -1,16 +1,31 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import type { Sample } from '../lib/types';
 import { bytesToMiB } from '../lib/units';
-import { POD_GROUP_PALETTE } from '../lib/colors';
+import {
+  CPU_RADAR_COLOR,
+  getGroupColor,
+  MEMORY_RADAR_COLOR,
+  type GroupColorMap
+} from '../lib/colors';
 import CumulativeChart from './CumulativeChart';
 import PerPodChart from './PerPodChart';
-import PerPodRadarChart from './PerPodRadarChart';
+import PerPodRadarChart, { type RadarRow } from './PerPodRadarChart';
 import StatsBar from './StatsBar';
+
+type PrintMetadata = {
+  namespace: string;
+  timeframeLabel: string;
+  sourceLabel: string;
+};
 
 type Props = {
   samples: Sample[];
   selectedGroups: Set<string>;
+  totalGroupCount?: number;
+  groupColorMap?: GroupColorMap;
   resetZoomSignal?: number;
+  onSelectAllGroups?: () => void;
+  printMetadata?: PrintMetadata;
 };
 
 function relativeTime(timestamp: string, firstTimestamp: string): string {
@@ -22,25 +37,49 @@ function relativeTime(timestamp: string, firstTimestamp: string): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0 }: Props) {
-  const groups = Array.from(selectedGroups).sort((left, right) => left.localeCompare(right));
-  const [pinnedSampleIndex, setPinnedSampleIndex] = useState<number | null>(null);
-  const [zoomRange, setZoomRange] = useState<{ startSampleIndex: number; endSampleIndex: number } | null>(null);
+export default function Dashboard({
+  samples,
+  selectedGroups,
+  totalGroupCount,
+  groupColorMap,
+  resetZoomSignal = 0,
+  onSelectAllGroups,
+  printMetadata
+}: Props) {
+  const groups = useMemo(
+    () => Array.from(selectedGroups).sort((left, right) => left.localeCompare(right)),
+    [selectedGroups]
+  );
+  const [pinnedTimestamp, setPinnedTimestamp] = useState<string | null>(null);
+  const [zoomRange, setZoomRange] = useState<{
+    startSampleIndex: number;
+    endSampleIndex: number;
+  } | null>(null);
   const [radarCollapsed, setRadarCollapsed] = useState(false);
+  const radarPanelBodyId = useId();
 
   useEffect(() => {
-    if (pinnedSampleIndex === null) {
+    if (pinnedTimestamp === null) {
       return;
     }
 
-    if (pinnedSampleIndex < 0 || pinnedSampleIndex >= samples.length) {
-      setPinnedSampleIndex(null);
+    const existsInWindow = samples.some(sample => sample.timestamp === pinnedTimestamp);
+    if (!existsInWindow) {
+      setPinnedTimestamp(null);
     }
-  }, [pinnedSampleIndex, samples.length]);
+  }, [pinnedTimestamp, samples]);
 
   useEffect(() => {
     setZoomRange(null);
+    setPinnedTimestamp(null);
   }, [resetZoomSignal]);
+
+  const handlePointClick = (sampleIndex: number) => {
+    const sample = samples[sampleIndex];
+    if (sample) {
+      setPinnedTimestamp(sample.timestamp);
+    }
+  };
 
   const graphModel = useMemo(() => {
     if (samples.length === 0) {
@@ -70,9 +109,10 @@ export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0
         currentTotalMemoryRequestMiB: 0,
         peakTotalCPU: 0,
         peakTotalMemoryMiB: 0,
-        cpuRadarRows: [] as { name: string; usage: number; request: number; usagePctOfRequest: number; }[],
-        memoryRadarRows: [] as { name: string; usage: number; request: number; usagePctOfRequest: number; }[],
+        cpuRadarRows: [] as RadarRow[],
+        memoryRadarRows: [] as RadarRow[],
         selectedRadarRelativeTime: '-',
+        selectedRadarTimestamp: null as string | null,
         activeSampleIndex: -1,
         clusterCPUCapacityMillicores: 0,
         clusterMemoryCapacityMiB: 0
@@ -96,12 +136,16 @@ export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0
           return;
         }
 
+        const memUsageMiB = bytesToMiB(pod.memUsageBytes);
+        const memReqMiB = bytesToMiB(pod.memRequestBytes);
         point[`${pod.name}.cpu`] = pod.cpuUsageMillicores;
-        point[`${pod.name}.memoryMiB`] = bytesToMiB(pod.memUsageBytes);
+        point[`${pod.name}.cpuRequest`] = pod.cpuRequestMillicores;
+        point[`${pod.name}.memoryMiB`] = memUsageMiB;
+        point[`${pod.name}.memoryRequestMiB`] = memReqMiB;
         point.totalCpuRequest = (point.totalCpuRequest as number) + pod.cpuRequestMillicores;
-        point.totalMemRequestMiB = (point.totalMemRequestMiB as number) + bytesToMiB(pod.memRequestBytes);
+        point.totalMemRequestMiB = (point.totalMemRequestMiB as number) + memReqMiB;
         point.totalCPU = (point.totalCPU as number) + pod.cpuUsageMillicores;
-        point.totalMemoryMiB = (point.totalMemoryMiB as number) + bytesToMiB(pod.memUsageBytes);
+        point.totalMemoryMiB = (point.totalMemoryMiB as number) + memUsageMiB;
       });
 
       return point;
@@ -110,7 +154,11 @@ export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0
     const latest = samples[samples.length - 1];
     const currentCPU = latest.pods
       .filter(pod => selectedGroups.has(pod.name))
-      .map(pod => ({ name: pod.name, usage: pod.cpuUsageMillicores, request: pod.cpuRequestMillicores }));
+      .map(pod => ({
+        name: pod.name,
+        usage: pod.cpuUsageMillicores,
+        request: pod.cpuRequestMillicores
+      }));
 
     const currentMemory = latest.pods
       .filter(pod => selectedGroups.has(pod.name))
@@ -125,14 +173,25 @@ export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0
     const currentTotalCPURequest = currentCPU.reduce((sum, row) => sum + row.request, 0);
     const currentTotalMemoryRequestMiB = currentMemory.reduce((sum, row) => sum + row.request, 0);
     const peakTotalCPU = timeline.reduce((max, point) => Math.max(max, point.totalCPU as number), 0);
-    const peakTotalMemoryMiB = timeline.reduce((max, point) => Math.max(max, point.totalMemoryMiB as number), 0);
+    const peakTotalMemoryMiB = timeline.reduce(
+      (max, point) => Math.max(max, point.totalMemoryMiB as number),
+      0
+    );
 
-    const activeSampleIndex = pinnedSampleIndex ?? (samples.length - 1);
+    const pinnedIndex =
+      pinnedTimestamp !== null
+        ? samples.findIndex(sample => sample.timestamp === pinnedTimestamp)
+        : -1;
+    const activeSampleIndex = pinnedIndex >= 0 ? pinnedIndex : samples.length - 1;
     const radarSourceSample = samples[activeSampleIndex] ?? latest;
 
     const selectedCPU = radarSourceSample.pods
       .filter(pod => selectedGroups.has(pod.name))
-      .map(pod => ({ name: pod.name, usage: pod.cpuUsageMillicores, request: pod.cpuRequestMillicores }));
+      .map(pod => ({
+        name: pod.name,
+        usage: pod.cpuUsageMillicores,
+        request: pod.cpuRequestMillicores
+      }));
 
     const selectedMemory = radarSourceSample.pods
       .filter(pod => selectedGroups.has(pod.name))
@@ -142,23 +201,29 @@ export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0
         request: bytesToMiB(pod.memRequestBytes)
       }));
 
-    const cpuRadarRows = selectedCPU.map(row => {
-      const effectiveRequest = row.request > 0 ? row.request : Math.max(row.usage, 1);
+    const cpuRadarRows: RadarRow[] = selectedCPU.map(row => {
+      const hasRequest = row.request > 0;
+      const rawPct = hasRequest ? (row.usage / row.request) * 100 : 0;
       return {
         name: row.name,
         usage: row.usage,
-        request: effectiveRequest,
-        usagePctOfRequest: Math.min(100, (row.usage / effectiveRequest) * 100)
+        request: hasRequest ? row.request : 0,
+        hasRequest,
+        rawPctOfRequest: rawPct,
+        usagePctOfRequest: hasRequest ? Math.min(100, rawPct) : 0
       };
     });
 
-    const memoryRadarRows = selectedMemory.map(row => {
-      const effectiveRequest = row.request > 0 ? row.request : Math.max(row.usage, 1);
+    const memoryRadarRows: RadarRow[] = selectedMemory.map(row => {
+      const hasRequest = row.request > 0;
+      const rawPct = hasRequest ? (row.usage / row.request) * 100 : 0;
       return {
         name: row.name,
         usage: row.usage,
-        request: effectiveRequest,
-        usagePctOfRequest: Math.min(100, (row.usage / effectiveRequest) * 100)
+        request: hasRequest ? row.request : 0,
+        hasRequest,
+        rawPctOfRequest: rawPct,
+        usagePctOfRequest: hasRequest ? Math.min(100, rawPct) : 0
       };
     });
 
@@ -179,11 +244,16 @@ export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0
 
       return {
         name: group,
-        color: POD_GROUP_PALETTE[index % POD_GROUP_PALETTE.length],
+        color: getGroupColor(groupColorMap, group, index),
         request,
         maxRecorded: peakUsage,
         axisCeiling: Math.max(request, peakUsage, 1),
-        points: points.map(point => ({ sampleIndex: point.sampleIndex, relativeTime: point.relativeTime, timestamp: point.timestamp, usage: point.usage }))
+        points: points.map(point => ({
+          sampleIndex: point.sampleIndex,
+          relativeTime: point.relativeTime,
+          timestamp: point.timestamp,
+          usage: point.usage
+        }))
       };
     });
 
@@ -204,11 +274,16 @@ export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0
 
       return {
         name: group,
-        color: POD_GROUP_PALETTE[index % POD_GROUP_PALETTE.length],
+        color: getGroupColor(groupColorMap, group, index),
         request,
         maxRecorded: peakUsage,
         axisCeiling: Math.max(request, peakUsage, 1),
-        points: points.map(point => ({ sampleIndex: point.sampleIndex, relativeTime: point.relativeTime, timestamp: point.timestamp, usage: point.usage }))
+        points: points.map(point => ({
+          sampleIndex: point.sampleIndex,
+          relativeTime: point.relativeTime,
+          timestamp: point.timestamp,
+          usage: point.usage
+        }))
       };
     });
 
@@ -227,14 +302,128 @@ export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0
       cpuRadarRows,
       memoryRadarRows,
       selectedRadarRelativeTime: relativeTime(radarSourceSample.timestamp, firstTimestamp),
+      selectedRadarTimestamp: radarSourceSample.timestamp,
       activeSampleIndex,
       clusterCPUCapacityMillicores: latest.clusterCpuCapacityMillicores ?? 0,
       clusterMemoryCapacityMiB: bytesToMiB(latest.clusterMemCapacityBytes ?? 0)
     };
-  }, [samples, selectedGroups, groups, pinnedSampleIndex]);
+  }, [samples, selectedGroups, groups, pinnedTimestamp, groupColorMap]);
+
+  const zoomWindowLabel = useMemo(() => {
+    if (!zoomRange || graphModel.timeline.length === 0) {
+      return null;
+    }
+    const startPoint = graphModel.timeline.find(
+      pt => pt.sampleIndex === zoomRange.startSampleIndex
+    );
+    const endPoint = graphModel.timeline.find(pt => pt.sampleIndex === zoomRange.endSampleIndex);
+    const startRel =
+      typeof startPoint?.relativeTime === 'string'
+        ? startPoint.relativeTime
+        : `#${zoomRange.startSampleIndex}`;
+    const endRel =
+      typeof endPoint?.relativeTime === 'string'
+        ? endPoint.relativeTime
+        : `#${zoomRange.endSampleIndex}`;
+    return `${startRel} – ${endRel}`;
+  }, [zoomRange, graphModel.timeline]);
+
+  const isPinned = pinnedTimestamp !== null;
+  const totalGroups = totalGroupCount ?? groups.length;
 
   return (
-    <main data-print-content style={{ display: 'grid', gap: 12 }}>
+    <div data-print-content className="dashboard-stack">
+      <div className="print-summary-header">
+        <div className="print-summary-title">
+          Galaxy K8s Monitor — Resource Utilization Report
+        </div>
+        <div className="print-summary-meta">
+          <span>
+            Namespace: <strong>{printMetadata?.namespace ?? '-'}</strong>
+          </span>
+          <span>
+            Timeframe: <strong>{printMetadata?.timeframeLabel ?? 'All'}</strong>
+          </span>
+          <span>
+            Source: <strong>{printMetadata?.sourceLabel ?? 'Live stream'}</strong>
+          </span>
+          <span>
+            Samples: <strong>{samples.length.toLocaleString()}</strong>
+          </span>
+          <span>
+            Pod groups:{' '}
+            <strong>
+              {selectedGroups.size}/{totalGroups}
+            </strong>
+          </span>
+          <span>
+            Exported: <strong>{new Date().toLocaleString()}</strong>
+          </span>
+        </div>
+      </div>
+
+      {(zoomRange !== null || isPinned) && (
+        <div
+          className="interaction-bar"
+          data-no-print
+          role="status"
+          aria-live="polite"
+        >
+          <div className="interaction-bar-items">
+            {zoomRange && zoomWindowLabel && (
+              <span className="interaction-pill">
+                Zoom window: {zoomWindowLabel}
+              </span>
+            )}
+            {isPinned && (
+              <span className="interaction-pill">
+                <span className="badge-pinned">Pinned</span>
+                <span>
+                  Sample at {graphModel.selectedRadarRelativeTime}
+                  {graphModel.selectedRadarTimestamp
+                    ? ` (${new Date(graphModel.selectedRadarTimestamp).toLocaleTimeString()})`
+                    : ''}
+                </span>
+              </span>
+            )}
+          </div>
+          <div className="interaction-bar-actions">
+            {zoomRange && (
+              <button
+                type="button"
+                className="btn-compact"
+                onClick={() => setZoomRange(null)}
+              >
+                Reset zoom
+              </button>
+            )}
+            {isPinned && (
+              <button
+                type="button"
+                className="btn-compact"
+                onClick={() => setPinnedTimestamp(null)}
+              >
+                Unpin / Reset to latest
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {selectedGroups.size === 0 && totalGroups > 0 && (
+        <div className="status-banner" data-variant="info" data-no-print role="status">
+          <div className="status-banner-content">
+            <strong>No pod groups selected.</strong>
+            <span>Select one or more pod groups in the filter panel to plot telemetry.</span>
+          </div>
+          {onSelectAllGroups && (
+            <button type="button" className="btn-compact" onClick={onSelectAllGroups}>
+              Select all groups
+            </button>
+          )}
+        </div>
+      )}
+
       <StatsBar
         currentCPU={graphModel.currentTotalCPU}
         currentMemoryMiB={graphModel.currentTotalMemoryMiB}
@@ -244,6 +433,8 @@ export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0
         peakMemoryMiB={graphModel.peakTotalMemoryMiB}
         clusterCPUCapacityMillicores={graphModel.clusterCPUCapacityMillicores}
         clusterMemoryCapacityMiB={graphModel.clusterMemoryCapacityMiB}
+        selectedGroupCount={selectedGroups.size}
+        totalGroupCount={totalGroups}
       />
 
       <CumulativeChart
@@ -251,7 +442,10 @@ export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0
         data={graphModel.timeline}
         podGroups={groups}
         metric="cpu"
-        onPointClick={setPinnedSampleIndex}
+        groupColorMap={groupColorMap}
+        onPointClick={handlePointClick}
+        onPinTimestamp={setPinnedTimestamp}
+        pinnedTimestamp={pinnedTimestamp}
         activeSampleIndex={graphModel.activeSampleIndex}
         zoomRange={zoomRange}
         onZoomRangeChange={setZoomRange}
@@ -261,7 +455,10 @@ export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0
         data={graphModel.timeline}
         podGroups={groups}
         metric="memory"
-        onPointClick={setPinnedSampleIndex}
+        groupColorMap={groupColorMap}
+        onPointClick={handlePointClick}
+        onPinTimestamp={setPinnedTimestamp}
+        pinnedTimestamp={pinnedTimestamp}
         activeSampleIndex={graphModel.activeSampleIndex}
         zoomRange={zoomRange}
         onZoomRangeChange={setZoomRange}
@@ -270,7 +467,8 @@ export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0
         title="Per-Pod CPU Horizon"
         series={graphModel.cpuSeries}
         unit="m"
-        onPointClick={setPinnedSampleIndex}
+        onPointClick={handlePointClick}
+        onPinTimestamp={setPinnedTimestamp}
         activeRelativeTime={graphModel.selectedRadarRelativeTime}
         zoomRange={zoomRange}
       />
@@ -278,83 +476,79 @@ export default function Dashboard({ samples, selectedGroups, resetZoomSignal = 0
         title="Per-Pod Memory Horizon"
         series={graphModel.memorySeries}
         unit=" MiB"
-        onPointClick={setPinnedSampleIndex}
+        onPointClick={handlePointClick}
+        onPinTimestamp={setPinnedTimestamp}
         activeRelativeTime={graphModel.selectedRadarRelativeTime}
         zoomRange={zoomRange}
       />
 
-      <section className="no-page-break" style={{ background: '#fff', border: '1px solid #dbe1ea', borderRadius: 8, padding: 12, display: 'grid', gap: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: radarCollapsed ? 0 : 4 }}>
-          <h3 style={{ margin: 0 }}>Per-Pod Radar</h3>
-          <button
-            type="button"
-            onClick={() => setRadarCollapsed(previous => !previous)}
-            style={{
-              border: '1px solid #cbd5e1',
-              background: '#f8fafc',
-              borderRadius: 999,
-              padding: '4px 10px',
-              fontSize: 12,
-              cursor: 'pointer',
-              color: '#334155',
-              fontWeight: 600
-            }}
-          >
-            {radarCollapsed ? 'Expand' : 'Collapse'}
-          </button>
+      <section
+        className="panel no-page-break"
+        data-pinned={isPinned ? 'true' : 'false'}
+        aria-label="Per-Pod Radar"
+      >
+        <div
+          className="panel-header"
+          data-collapsed={radarCollapsed ? 'true' : 'false'}
+        >
+          <div className="panel-title-group">
+            <h3 className="panel-title">Per-Pod Radar</h3>
+            {isPinned && <span className="badge-pinned">Pinned</span>}
+            <span className="panel-subtitle">
+              Datapoint: <strong>{graphModel.selectedRadarRelativeTime}</strong>
+              {isPinned ? ' (pinned)' : ' (latest)'}
+            </span>
+          </div>
+
+          <div className="panel-header-actions" data-no-print>
+            {isPinned && (
+              <button
+                type="button"
+                className="btn-compact"
+                onClick={() => setPinnedTimestamp(null)}
+              >
+                Reset to latest
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn-compact"
+              aria-expanded={!radarCollapsed}
+              aria-controls={radarPanelBodyId}
+              onClick={() => setRadarCollapsed(previous => !previous)}
+            >
+              {radarCollapsed ? 'Expand' : 'Collapse'}
+            </button>
+          </div>
         </div>
 
         {!radarCollapsed && (
-          <>
-            <div style={{ display: 'grid', gap: 4 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontSize: 12, color: '#334155', fontWeight: 600 }}>
-                  Radar datapoint: {graphModel.selectedRadarRelativeTime}{pinnedSampleIndex === null ? ' (latest)' : ' (pinned)'}
-                </div>
-                {pinnedSampleIndex !== null && (
-                  <button
-                    type="button"
-                    onClick={() => setPinnedSampleIndex(null)}
-                    style={{
-                      border: '1px solid #cbd5e1',
-                      background: '#f8fafc',
-                      color: '#334155',
-                      borderRadius: 999,
-                      padding: '4px 10px',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Reset to latest
-                  </button>
-                )}
-              </div>
-              <div style={{ fontSize: 12, color: '#475569', maxWidth: 820, lineHeight: 1.35 }}>
-                Each radar chart plots per-pod usage as a percentage of that pod's request, capped at 100%.
-                Click any datapoint in the cumulative or per-pod charts above to pin this section to that sample.
-              </div>
-            </div>
+          <div id={radarPanelBodyId} className="panel-body">
+            <p className="panel-subtitle" style={{ marginBottom: '0.85rem', maxWidth: 820 }}>
+              Each radar chart plots per-pod usage as a percentage of that pod&apos;s request, capped
+              at 100%. Click any datapoint in the cumulative or per-pod charts above (or use the
+              sample selector in the table disclosures) to pin this section to that sample.
+            </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="radar-grid">
               <PerPodRadarChart
                 title="Per-Pod CPU Radar"
                 rows={graphModel.cpuRadarRows}
                 unit="m"
-                color={POD_GROUP_PALETTE[6]}
-                isPinned={pinnedSampleIndex !== null}
+                color={CPU_RADAR_COLOR}
+                isPinned={isPinned}
               />
               <PerPodRadarChart
                 title="Per-Pod Memory Radar"
                 rows={graphModel.memoryRadarRows}
                 unit=" MiB"
-                color={POD_GROUP_PALETTE[2]}
-                isPinned={pinnedSampleIndex !== null}
+                color={MEMORY_RADAR_COLOR}
+                isPinned={isPinned}
               />
             </div>
-          </>
+          </div>
         )}
       </section>
-    </main>
+    </div>
   );
 }

@@ -1,12 +1,20 @@
-import React from 'react';
-import { POD_GROUP_PALETTE } from '../lib/colors';
+import React, { useMemo, useState } from 'react';
+import { Search, X } from 'lucide-react';
+import { getGroupColor, type GroupColorMap } from '../lib/colors';
 
-type Timeframe = '10m' | '1h' | '8h' | 'all';
+export type Timeframe = '10m' | '1h' | '8h' | 'all';
+
+const GALAXY_TARGET_GROUPS = new Set(['galaxy-web', 'galaxy-workflow', 'galaxy-job']);
+
+export function isGalaxyGroup(group: string): boolean {
+  return GALAXY_TARGET_GROUPS.has(group) || group.startsWith('galaxy-');
+}
 
 type Props = {
   podGroups: string[];
   selectedGroups: Set<string>;
   selectedTimeframe: Timeframe;
+  groupColorMap?: GroupColorMap;
   onToggleGroup: (name: string) => void;
   onSelectOnly: (name: string) => void;
   onSelectAll: () => void;
@@ -15,10 +23,18 @@ type Props = {
   onTimeframeChange: (timeframe: Timeframe) => void;
 };
 
+const TIMEFRAME_OPTIONS: { value: Timeframe; label: string }[] = [
+  { value: '10m', label: '10 minutes' },
+  { value: '1h', label: '1 hour' },
+  { value: '8h', label: '8 hours' },
+  { value: 'all', label: 'All' }
+];
+
 export default function PodGroupFilter({
   podGroups,
   selectedGroups,
   selectedTimeframe,
+  groupColorMap,
   onToggleGroup,
   onSelectOnly,
   onSelectAll,
@@ -26,139 +42,189 @@ export default function PodGroupFilter({
   onSelectGalaxy,
   onTimeframeChange
 }: Props) {
-  const [hoveredGroup, setHoveredGroup] = React.useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const galaxyGroups = useMemo(
+    () => podGroups.filter(isGalaxyGroup),
+    [podGroups]
+  );
+  const hasGalaxyGroups = galaxyGroups.length > 0;
+
+  const isAllPresetActive =
+    podGroups.length > 0 &&
+    selectedGroups.size === podGroups.length &&
+    podGroups.every(group => selectedGroups.has(group));
+
+  const isNonePresetActive =
+    podGroups.length > 0 && selectedGroups.size === 0;
+
+  const isGalaxyPresetActive =
+    hasGalaxyGroups &&
+    selectedGroups.size === galaxyGroups.length &&
+    galaxyGroups.every(group => selectedGroups.has(group));
+
+  const visiblePodGroups = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) {
+      return podGroups;
+    }
+    return podGroups.filter(group => group.toLowerCase().includes(query));
+  }, [podGroups, searchQuery]);
+
+  const showSearchInput = podGroups.length > 5 || searchQuery.trim().length > 0;
 
   return (
-    <aside style={{ width: '100%', boxSizing: 'border-box', background: '#fff', border: '1px solid #dbe1ea', borderRadius: 8, padding: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <strong>Pod Groups</strong>
-        <span style={{ color: '#4b5563', fontSize: 12 }}>{selectedGroups.size}/{podGroups.length}</span>
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-        <button
-          onClick={onSelectAll}
-          style={{
-            padding: '5px 12px',
-            cursor: 'pointer',
-            border: '1px solid #60A3BC',
-            borderRadius: 999,
-            background: '#E8F3F7',
-            color: '#1f4f63',
-            fontSize: 12,
-            fontWeight: 600
-          }}
-        >
-          All
-        </button>
-        <button
-          onClick={onSelectNone}
-          style={{
-            padding: '5px 12px',
-            cursor: 'pointer',
-            border: '1px solid #E66767',
-            borderRadius: 999,
-            background: '#FDECEC',
-            color: '#7f1d1d',
-            fontSize: 12,
-            fontWeight: 600
-          }}
-        >
-          None
-        </button>
-        <button
-          onClick={onSelectGalaxy}
-          style={{
-            padding: '5px 12px',
-            cursor: 'pointer',
-            border: '1px solid #A29BFE',
-            borderRadius: 999,
-            background: '#F1EEFF',
-            color: '#4c1d95',
-            fontSize: 12,
-            fontWeight: 600
-          }}
-        >
-          Galaxy
-        </button>
-      </div>
-
-      <div style={{ maxHeight: '72vh', overflowY: 'auto' }}>
-        {podGroups.map((group, index) => (
-          <div
-            key={group}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}
-            onMouseEnter={() => setHoveredGroup(group)}
-            onMouseLeave={() => setHoveredGroup(current => (current === group ? null : current))}
-          >
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
-              <input
-                type="checkbox"
-                checked={selectedGroups.has(group)}
-                onChange={() => onToggleGroup(group)}
-              />
-              <span
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: '50%',
-                  background: POD_GROUP_PALETTE[index % POD_GROUP_PALETTE.length],
-                  display: 'inline-block'
-                }}
-              />
-              <span style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group}</span>
-            </label>
-
-            <button
-              type="button"
-              onClick={() => onSelectOnly(group)}
-              style={{
-                visibility: hoveredGroup === group ? 'visible' : 'hidden',
-                border: 'none',
-                background: 'transparent',
-                color: '#2563eb',
-                cursor: 'pointer',
-                fontSize: 12,
-                padding: '0 8px 0 0',
-                lineHeight: 1.2
-              }}
-              aria-label={`Select only ${group}`}
-            >
-              Only
-            </button>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ marginTop: 10 }}>
-        <div style={{ marginBottom: 6 }}>
-          <strong>Timeframe</strong>
+    <aside className="sidebar" aria-label="Timeframe and pod group filters">
+      <div className="control-group">
+        <div className="control-group-header">
+          <h2>Timeframe</h2>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-          {[
-            { value: '10m', label: '10 minutes' },
-            { value: '1h', label: '1 hour' },
-            { value: '8h', label: '8 hours' },
-            { value: 'all', label: 'All' }
-          ].map(option => (
+        <div className="chip-grid-2" role="group" aria-label="Timeframe">
+          {TIMEFRAME_OPTIONS.map(option => (
             <button
               key={option.value}
               type="button"
-              onClick={() => onTimeframeChange(option.value as Timeframe)}
-              style={{
-                padding: '4px 8px',
-                cursor: 'pointer',
-                border: '1px solid #cbd5e1',
-                borderRadius: 4,
-                background: selectedTimeframe === option.value ? '#e2e8f0' : '#fff',
-                fontWeight: selectedTimeframe === option.value ? 600 : 400,
-                fontSize: 12,
-                textAlign: 'left'
-              }}
+              className="chip-button"
+              aria-pressed={selectedTimeframe === option.value}
+              onClick={() => onTimeframeChange(option.value)}
             >
               {option.label}
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="control-group">
+        <div className="control-group-header">
+          <h2>Pod groups</h2>
+          <span
+            className="count-pill"
+            aria-label={`${selectedGroups.size} of ${podGroups.length} pod groups selected`}
+          >
+            {selectedGroups.size}/{podGroups.length}
+          </span>
+        </div>
+
+        <div className="chip-row" role="group" aria-label="Pod group presets">
+          <button
+            type="button"
+            className="chip-button"
+            aria-pressed={isAllPresetActive}
+            disabled={podGroups.length === 0}
+            onClick={onSelectAll}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            className="chip-button"
+            aria-pressed={isNonePresetActive}
+            disabled={podGroups.length === 0}
+            onClick={onSelectNone}
+          >
+            None
+          </button>
+          <button
+            type="button"
+            className="chip-button"
+            aria-pressed={isGalaxyPresetActive}
+            disabled={!hasGalaxyGroups}
+            title={
+              hasGalaxyGroups
+                ? `Select Galaxy pod groups (${galaxyGroups.join(', ')})`
+                : 'No Galaxy pod groups (galaxy-web, galaxy-workflow, galaxy-job, or galaxy-*) are present in this dataset'
+            }
+            onClick={onSelectGalaxy}
+          >
+            Galaxy
+          </button>
+        </div>
+
+        {showSearchInput && (
+          <div className="filter-search">
+            <Search size={15} aria-hidden="true" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={event => setSearchQuery(event.target.value)}
+              placeholder="Filter pod groups…"
+              aria-label="Filter pod groups by name"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className="filter-search-clear"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear pod group search"
+                title="Clear search"
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        )}
+
+        {podGroups.length === 0 ? (
+          <div style={{ fontSize: '0.86rem', color: 'var(--monitor-grey)', padding: '0.25rem 0' }}>
+            No pod groups available yet.
+          </div>
+        ) : visiblePodGroups.length === 0 ? (
+          <div style={{ fontSize: '0.86rem', color: 'var(--monitor-grey)', padding: '0.25rem 0' }}>
+            No pod groups match “{searchQuery.trim()}”.
+          </div>
+        ) : (
+          <div className="pod-group-list" role="group" aria-label="Pod group selection">
+            {visiblePodGroups.map(group => {
+              const originalIndex = podGroups.indexOf(group);
+              const swatchColor = getGroupColor(groupColorMap, group, Math.max(0, originalIndex));
+              const isSelected = selectedGroups.has(group);
+              const isSoleSelected = selectedGroups.size === 1 && isSelected;
+
+              return (
+                <div
+                  key={group}
+                  className="pod-group-row"
+                  data-selected={isSelected ? 'true' : 'false'}
+                >
+                  <label className="pod-group-label">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => onToggleGroup(group)}
+                    />
+                    <span
+                      className="color-swatch"
+                      style={{ background: swatchColor }}
+                      aria-hidden="true"
+                    />
+                    <span className="pod-group-name" title={group}>
+                      {group}
+                    </span>
+                  </label>
+
+                  <button
+                    type="button"
+                    className="pod-only-btn"
+                    data-sole={isSoleSelected ? 'true' : 'false'}
+                    onClick={() => (isSoleSelected ? onSelectAll() : onSelectOnly(group))}
+                    aria-label={
+                      isSoleSelected
+                        ? `Restore all pod groups (currently showing only ${group})`
+                        : `Select only ${group}`
+                    }
+                    title={
+                      isSoleSelected
+                        ? 'Restore all pod groups'
+                        : `Show only ${group}`
+                    }
+                  >
+                    {isSoleSelected ? 'All' : 'Only'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </aside>
   );

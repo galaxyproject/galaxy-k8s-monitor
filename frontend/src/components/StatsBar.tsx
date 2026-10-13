@@ -1,5 +1,11 @@
 import React from 'react';
-import { POD_GROUP_PALETTE } from '../lib/colors';
+import {
+  CPU_CURRENT_COLOR,
+  CPU_PEAK_COLOR,
+  MEMORY_CURRENT_COLOR,
+  MEMORY_PEAK_COLOR
+} from '../lib/colors';
+import { formatAdaptiveMemoryFromMiB, formatGiBFromMiB, formatMillicores } from '../lib/units';
 
 type Props = {
   currentCPU: number;
@@ -10,6 +16,18 @@ type Props = {
   peakMemoryMiB: number;
   clusterCPUCapacityMillicores: number;
   clusterMemoryCapacityMiB: number;
+  selectedGroupCount?: number;
+  totalGroupCount?: number;
+};
+
+type UtilizationCardProps = {
+  label: string;
+  value: string;
+  percentage: number;
+  fillColor: string;
+  requestLabel: string;
+  requestPercentage: number;
+  isOverRequest: boolean;
 };
 
 function UtilizationCard({
@@ -17,104 +35,53 @@ function UtilizationCard({
   value,
   percentage,
   fillColor,
-  markerPercentage,
-  markerTitle
-}: {
-  label: string;
-  value: string;
-  percentage: number;
-  fillColor: string;
-  markerPercentage?: number;
-  markerTitle?: string;
-}) {
-  const [showMarkerTooltip, setShowMarkerTooltip] = React.useState(false);
+  requestLabel,
+  requestPercentage,
+  isOverRequest
+}: UtilizationCardProps) {
   const safePercentage = Math.max(0, Math.min(100, percentage));
-  const safeMarkerPercentage = markerPercentage === undefined
-    ? null
-    : Math.max(0, Math.min(100, markerPercentage));
+  const safeMarkerPercentage = Math.max(0, Math.min(100, requestPercentage));
 
   return (
-    <div style={{ boxSizing: 'border-box', background: '#fff', border: '1px solid #dbe1ea', borderRadius: 8, padding: 12, minWidth: 0, width: '100%' }}>
-      <div style={{ color: '#4b5563', fontSize: 12 }}>{label}</div>
+    <div className="stat-card">
+      <div className="stat-card-header">
+        <span className="stat-label">{label}</span>
+        <span className="stat-pct">{safePercentage.toFixed(1)}%</span>
+      </div>
+
+      <div className="stat-value">{value}</div>
+
       <div
-        style={{
-          marginTop: 8,
-          height: 18,
-          position: 'relative',
-          borderRadius: 6,
-          background: '#e5e7eb',
-          overflow: 'hidden',
-          border: '1px solid #cbd5e1'
-        }}
+        className="stat-meter"
+        role="img"
+        aria-label={`${label}: ${value} (${safePercentage.toFixed(1)}% of cluster capacity). Cumulative request: ${requestLabel} (${safeMarkerPercentage.toFixed(1)}% of cluster capacity).`}
       >
         <div
+          className="stat-meter-fill"
           style={{
             width: `${safePercentage}%`,
-            height: '100%',
-            background: fillColor,
-            transition: 'width 180ms ease-out'
+            background: fillColor
           }}
         />
-        {safeMarkerPercentage !== null && (
-          <div
-            title={markerTitle ?? 'Cumulative request marker'}
-            onMouseEnter={() => setShowMarkerTooltip(true)}
-            onMouseLeave={() => setShowMarkerTooltip(false)}
-            style={{
-              position: 'absolute',
-              top: -1,
-              bottom: -1,
-              left: `calc(${safeMarkerPercentage}% - 1px)`,
-              width: 2,
-              background: '#111827',
-              opacity: 0.9,
-              pointerEvents: 'auto'
-            }}
-          />
-        )}
-        {safeMarkerPercentage !== null && showMarkerTooltip && (
-          <div
-            style={{
-              position: 'absolute',
-              left: `calc(${safeMarkerPercentage}% - 70px)`,
-              bottom: 22,
-              width: 140,
-              textAlign: 'center',
-              fontSize: 11,
-              lineHeight: 1.25,
-              padding: '4px 6px',
-              borderRadius: 6,
-              border: '1px solid #cbd5e1',
-              background: '#111827',
-              color: '#f8fafc',
-              zIndex: 2,
-              pointerEvents: 'none'
-            }}
-          >
-            {markerTitle ?? 'Cumulative request marker'}
-          </div>
-        )}
-      </div>
-      <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
         <div
+          className="stat-meter-marker"
+          title={`Cumulative request: ${requestLabel} (${safeMarkerPercentage.toFixed(1)}% of cluster capacity)`}
           style={{
-            fontSize: 15,
-            fontWeight: 600,
-            whiteSpace: 'normal',
-            overflowWrap: 'anywhere',
-            lineHeight: 1.25
+            left: `calc(${safeMarkerPercentage}% - 1.5px)`
           }}
-        >
-          {value}
-        </div>
-        <div style={{ color: '#4b5563', fontSize: 12 }}>{safePercentage.toFixed(1)}%</div>
+        />
+      </div>
+
+      <div className="stat-secondary">
+        <span>
+          Request: <strong>{requestLabel}</strong> ({safeMarkerPercentage.toFixed(1)}%)
+        </span>
+        {isOverRequest && (
+          <span className="text-overdraw">Over request</span>
+        )}
       </div>
     </div>
   );
-}
-
-function miBToGB(valueMiB: number): number {
-  return valueMiB / 1024;
 }
 
 export default function StatsBar(props: Props) {
@@ -148,40 +115,74 @@ export default function StatsBar(props: Props) {
       ? (props.currentMemoryRequestMiB / props.clusterMemoryCapacityMiB) * 100
       : 0;
 
+  const totalGroups = props.totalGroupCount ?? 0;
+  const selectedGroups = props.selectedGroupCount ?? totalGroups;
+  const isFilteredSubset = totalGroups > 0 && selectedGroups < totalGroups;
+
+  const cpuCapacityLabel = formatMillicores(props.clusterCPUCapacityMillicores);
+  const memCapacityLabel = formatGiBFromMiB(props.clusterMemoryCapacityMiB);
+  const cpuRequestLabel = formatMillicores(props.currentCPURequest);
+  const memRequestLabel = formatAdaptiveMemoryFromMiB(props.currentMemoryRequestMiB);
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12, width: '100%' }}>
-      <UtilizationCard
-        label="Current Total CPU"
-        value={`${Math.round(props.currentCPU).toLocaleString()}m / ${Math.round(props.clusterCPUCapacityMillicores).toLocaleString()}m`}
-        percentage={cpuPercentage}
-        fillColor={POD_GROUP_PALETTE[6]}
-        markerPercentage={cpuRequestPercentage}
-        markerTitle={`Cumulative request: ${Math.round(props.currentCPURequest).toLocaleString()}m`}
-      />
-      <UtilizationCard
-        label="Max Total CPU"
-        value={`${Math.round(props.peakCPU).toLocaleString()}m / ${Math.round(props.clusterCPUCapacityMillicores).toLocaleString()}m`}
-        percentage={peakCPUPercentage}
-        fillColor={POD_GROUP_PALETTE[0]}
-        markerPercentage={cpuRequestPercentage}
-        markerTitle={`Cumulative request: ${Math.round(props.currentCPURequest).toLocaleString()}m`}
-      />
-      <UtilizationCard
-        label="Current Total Memory"
-        value={`${miBToGB(props.currentMemoryMiB).toLocaleString(undefined, { maximumFractionDigits: 2 })} GB / ${miBToGB(props.clusterMemoryCapacityMiB).toLocaleString(undefined, { maximumFractionDigits: 2 })} GB`}
-        percentage={memoryPercentage}
-        fillColor={POD_GROUP_PALETTE[2]}
-        markerPercentage={memoryRequestPercentage}
-        markerTitle={`Cumulative request: ${miBToGB(props.currentMemoryRequestMiB).toLocaleString(undefined, { maximumFractionDigits: 2 })} GB`}
-      />
-      <UtilizationCard
-        label="Max Total Memory"
-        value={`${miBToGB(props.peakMemoryMiB).toLocaleString(undefined, { maximumFractionDigits: 2 })} GB / ${miBToGB(props.clusterMemoryCapacityMiB).toLocaleString(undefined, { maximumFractionDigits: 2 })} GB`}
-        percentage={peakMemoryPercentage}
-        fillColor={POD_GROUP_PALETTE[4]}
-        markerPercentage={memoryRequestPercentage}
-        markerTitle={`Cumulative request: ${miBToGB(props.currentMemoryRequestMiB).toLocaleString(undefined, { maximumFractionDigits: 2 })} GB`}
-      />
-    </div>
+    <section className="stats-section" aria-label="Cluster utilization summary">
+      {totalGroups > 0 && (
+        <div className="stats-header-bar">
+          <span>
+            Totals for{' '}
+            <strong>
+              {isFilteredSubset
+                ? `${selectedGroups} of ${totalGroups} selected pod groups`
+                : `all ${totalGroups} pod groups`}
+            </strong>{' '}
+            vs. full cluster capacity (vertical bar marker = cumulative request)
+          </span>
+          {isFilteredSubset && (
+            <span className="badge-scope">
+              Filtered subset ({selectedGroups}/{totalGroups})
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="stats-grid">
+        <UtilizationCard
+          label="Current Total CPU"
+          value={`${formatMillicores(props.currentCPU)} / ${cpuCapacityLabel}`}
+          percentage={cpuPercentage}
+          fillColor={CPU_CURRENT_COLOR}
+          requestLabel={cpuRequestLabel}
+          requestPercentage={cpuRequestPercentage}
+          isOverRequest={props.currentCPURequest > 0 && props.currentCPU > props.currentCPURequest}
+        />
+        <UtilizationCard
+          label="Peak Total CPU"
+          value={`${formatMillicores(props.peakCPU)} / ${cpuCapacityLabel}`}
+          percentage={peakCPUPercentage}
+          fillColor={CPU_PEAK_COLOR}
+          requestLabel={cpuRequestLabel}
+          requestPercentage={cpuRequestPercentage}
+          isOverRequest={props.currentCPURequest > 0 && props.peakCPU > props.currentCPURequest}
+        />
+        <UtilizationCard
+          label="Current Total Memory"
+          value={`${formatAdaptiveMemoryFromMiB(props.currentMemoryMiB)} / ${memCapacityLabel}`}
+          percentage={memoryPercentage}
+          fillColor={MEMORY_CURRENT_COLOR}
+          requestLabel={memRequestLabel}
+          requestPercentage={memoryRequestPercentage}
+          isOverRequest={props.currentMemoryRequestMiB > 0 && props.currentMemoryMiB > props.currentMemoryRequestMiB}
+        />
+        <UtilizationCard
+          label="Peak Total Memory"
+          value={`${formatAdaptiveMemoryFromMiB(props.peakMemoryMiB)} / ${memCapacityLabel}`}
+          percentage={peakMemoryPercentage}
+          fillColor={MEMORY_PEAK_COLOR}
+          requestLabel={memRequestLabel}
+          requestPercentage={memoryRequestPercentage}
+          isOverRequest={props.currentMemoryRequestMiB > 0 && props.peakMemoryMiB > props.currentMemoryRequestMiB}
+        />
+      </div>
+    </section>
   );
 }
