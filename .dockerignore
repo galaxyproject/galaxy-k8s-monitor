@@ -1,0 +1,11 @@
+.git
+frontend/node_modules
+frontend/dist
+galaxy-k8s-monitor
+galaxy-vm-monitor
+ea-no-commit
+*.log
+.DS_Store
+*.tgz
+*.md
+*.csv
