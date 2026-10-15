@@ -385,7 +385,7 @@ button:disabled {
 }
 
 .pod-group-row:hover,
-.pod-group-row:focus-within {
+.pod-group-row:has(:focus-visible) {
   background: #ffffff;
   border-color: #c8d4df;
 }
@@ -431,15 +431,6 @@ button:disabled {
   line-height: 1.3;
 }
 
-/* Reveal full pod group names on hover or keyboard focus without requiring a mouse tooltip */
-.pod-group-row:hover .pod-group-name,
-.pod-group-row:focus-within .pod-group-name {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-  overflow-wrap: anywhere;
-}
-
 .pod-only-btn {
   flex-shrink: 0;
   border: 1px solid var(--monitor-border-chip);
@@ -456,7 +447,7 @@ button:disabled {
 }
 
 .pod-group-row:hover .pod-only-btn,
-.pod-group-row:focus-within .pod-only-btn,
+.pod-group-row:has(:focus-visible) .pod-only-btn,
 .pod-only-btn:focus-visible,
 .pod-only-btn[data-sole="true"] {
   opacity: 1;
