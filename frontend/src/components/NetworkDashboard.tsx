@@ -786,10 +786,14 @@ export default function NetworkDashboard({
   const egressSharePct =
     totalBootBytes > 0 ? (latest.txBytes / totalBootBytes) * 100 : 0;
 
-  const ingressRateMeterTooltip = `Ingress rate trend across timeframe. Current: ${formatRateMBps(latest.ingressMBps)}. Average in timeframe: ${formatRateMBps(summary.avgIngressMBps)}. Peak: ${formatRateMBps(summary.peakIngressMBps)} at ${formatShortTime(summary.peakIngressTimestamp)}.`;
-  const egressRateMeterTooltip = `Egress rate trend across timeframe. Current: ${formatRateMBps(latest.egressMBps)}. Average in timeframe: ${formatRateMBps(summary.avgEgressMBps)}. Peak: ${formatRateMBps(summary.peakEgressMBps)} at ${formatShortTime(summary.peakEgressTimestamp)}.`;
-  const ingressTotalMeterTooltip = `Cumulative data received (Ingress): ${formatBytesVolume(latest.rxBytes)} since instance boot (${ingressSharePct.toFixed(1)}% of total transfer). Sparkline shows +${formatBytesVolume(summary.windowIngressBytes)} cumulative growth across the selected timeframe.`;
-  const egressTotalMeterTooltip = `Cumulative data sent out (Egress): ${formatBytesVolume(latest.txBytes)} since instance boot (${egressSharePct.toFixed(1)}% of total transfer). Sparkline shows +${formatBytesVolume(summary.windowEgressBytes)} cumulative growth across the selected timeframe.`;
+  const ingressRateMeterTooltip =
+    'Includes: Uploading files to Galaxy, pulling tool containers, and fetching CVMFS reference data';
+  const egressRateMeterTooltip =
+    'Includes: Downloading results to your computer and exporting datasets or histories to external storage';
+  const ingressTotalMeterTooltip =
+    'Includes: All data received since instance start — uploaded files, pulled tool containers, and fetched CVMFS reference data';
+  const egressTotalMeterTooltip =
+    'Includes: All data sent out since instance start — downloaded results and datasets or histories exported to external storage';
 
   const zoomWindowLabel =
     zoomRange && displayedPoints.length > 0
@@ -888,32 +892,6 @@ export default function NetworkDashboard({
               />
               <div className="stat-meter-tooltip" role="tooltip">
                 <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-swatch"
-                    style={{ background: NETWORK_INGRESS_COLOR }}
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <strong>Current ingress:</strong> {formatRateMBps(latest.ingressMBps)}{' '}
-                    (timeframe avg: {formatRateMBps(summary.avgIngressMBps)})
-                  </span>
-                </div>
-                <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-swatch"
-                    style={{
-                      background: 'rgba(90, 169, 164, 0.28)',
-                      border: '1px solid rgba(90, 169, 164, 0.7)'
-                    }}
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <strong>Peak in timeframe:</strong>{' '}
-                    {formatRateMBps(summary.peakIngressMBps)} at{' '}
-                    {formatShortTime(summary.peakIngressTimestamp)}
-                  </span>
-                </div>
-                <div className="stat-meter-tooltip-row">
                   <span>
                     <strong>Includes:</strong> Uploading files to Galaxy, pulling tool containers,
                     and fetching CVMFS reference data
@@ -922,7 +900,7 @@ export default function NetworkDashboard({
               </div>
             </div>
             <div className="stat-secondary">
-              <span>Window rate trend</span>
+              <span>Timeframe rate trend</span>
               <span>
                 Peak: <strong>{formatRateMBps(summary.peakIngressMBps)}</strong>
               </span>
@@ -953,32 +931,6 @@ export default function NetworkDashboard({
               />
               <div className="stat-meter-tooltip" role="tooltip">
                 <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-swatch"
-                    style={{ background: NETWORK_EGRESS_COLOR }}
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <strong>Current egress:</strong> {formatRateMBps(latest.egressMBps)}{' '}
-                    (timeframe avg: {formatRateMBps(summary.avgEgressMBps)})
-                  </span>
-                </div>
-                <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-swatch"
-                    style={{
-                      background: 'rgba(162, 155, 254, 0.28)',
-                      border: '1px solid rgba(162, 155, 254, 0.7)'
-                    }}
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <strong>Peak in timeframe:</strong>{' '}
-                    {formatRateMBps(summary.peakEgressMBps)} at{' '}
-                    {formatShortTime(summary.peakEgressTimestamp)}
-                  </span>
-                </div>
-                <div className="stat-meter-tooltip-row">
                   <span>
                     <strong>Includes:</strong> Downloading results to your computer and exporting
                     datasets or histories to external storage
@@ -987,7 +939,7 @@ export default function NetworkDashboard({
               </div>
             </div>
             <div className="stat-secondary">
-              <span>Window rate trend</span>
+              <span>Timeframe rate trend</span>
               <span>
                 Peak: <strong>{formatRateMBps(summary.peakEgressMBps)}</strong>
               </span>
@@ -1000,7 +952,7 @@ export default function NetworkDashboard({
               <span className="stat-label">Total Ingress</span>
               <span className="stat-pct" style={{ color: 'var(--monitor-primary)' }}>
                 +{formatBytesVolume(summary.windowIngressBytes)}{' '}
-                <span className="stat-pct-sub">in window</span>
+                <span className="stat-pct-sub">in timeframe</span>
               </span>
             </div>
             <div className="stat-value">{formatBytesVolume(latest.rxBytes)}</div>
@@ -1018,21 +970,9 @@ export default function NetworkDashboard({
               />
               <div className="stat-meter-tooltip" role="tooltip">
                 <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-swatch"
-                    style={{ background: NETWORK_INGRESS_COLOR }}
-                    aria-hidden="true"
-                  />
                   <span>
-                    <strong>Cumulative since boot:</strong>{' '}
-                    {formatBytesVolume(latest.rxBytes)} ({ingressSharePct.toFixed(1)}% of all
-                    network transfer)
-                  </span>
-                </div>
-                <div className="stat-meter-tooltip-row">
-                  <span>
-                    <strong>Transferred in timeframe (sparkline):</strong> +
-                    {formatBytesVolume(summary.windowIngressBytes)}
+                    <strong>Includes:</strong> All data received since instance start — uploaded
+                    files, pulled tool containers, and fetched CVMFS reference data
                   </span>
                 </div>
               </div>
@@ -1051,7 +991,7 @@ export default function NetworkDashboard({
               <span className="stat-label">Total Egress</span>
               <span className="stat-pct" style={{ color: 'var(--monitor-primary)' }}>
                 +{formatBytesVolume(summary.windowEgressBytes)}{' '}
-                <span className="stat-pct-sub">in window</span>
+                <span className="stat-pct-sub">in timeframe</span>
               </span>
             </div>
             <div className="stat-value">{formatBytesVolume(latest.txBytes)}</div>
@@ -1069,21 +1009,9 @@ export default function NetworkDashboard({
               />
               <div className="stat-meter-tooltip" role="tooltip">
                 <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-swatch"
-                    style={{ background: NETWORK_EGRESS_COLOR }}
-                    aria-hidden="true"
-                  />
                   <span>
-                    <strong>Cumulative since boot:</strong>{' '}
-                    {formatBytesVolume(latest.txBytes)} ({egressSharePct.toFixed(1)}% of all
-                    network transfer)
-                  </span>
-                </div>
-                <div className="stat-meter-tooltip-row">
-                  <span>
-                    <strong>Transferred in timeframe (sparkline):</strong> +
-                    {formatBytesVolume(summary.windowEgressBytes)}
+                    <strong>Includes:</strong> All data sent out since instance start — downloaded
+                    results and datasets or histories exported to external storage
                   </span>
                 </div>
               </div>
@@ -1098,7 +1026,7 @@ export default function NetworkDashboard({
         </div>
       </section>
 
-      {/* Chart Panel 1: Network Throughput (MB/s) */}
+      {/* Chart Panel 1: Network Throughput */}
       <section
         className="panel"
         aria-labelledby={throughputTitleId}
@@ -1110,7 +1038,7 @@ export default function NetworkDashboard({
         >
           <div className="panel-title-group">
             <h3 id={throughputTitleId} className="panel-title">
-              Network Throughput (MB/s)
+              Network Throughput
             </h3>
             <span className="panel-subtitle">
               Inbound download (Ingress) and outbound upload (Egress) speed · Drag across chart to
@@ -1310,7 +1238,7 @@ export default function NetworkDashboard({
         )}
       </section>
 
-      {/* Chart Panel 2: Cumulative Data Transferred (Ingress & Egress) */}
+      {/* Chart Panel 2: Cumulative Data Transferred */}
       <section
         className="panel"
         aria-labelledby={volumeTitleId}
@@ -1322,7 +1250,7 @@ export default function NetworkDashboard({
         >
           <div className="panel-title-group">
             <h3 id={volumeTitleId} className="panel-title">
-              Cumulative Data Transferred ({volumeChartScale.unit})
+              Cumulative Data Transferred
             </h3>
             <span className="panel-subtitle">
               Total data received (Ingress) and sent out (Egress) · Drag across chart to zoom
@@ -1339,47 +1267,23 @@ export default function NetworkDashboard({
                 </button>
               </>
             )}
-            <div
-              className="chip-row"
-              role="group"
-              aria-label="Cumulative volume baseline"
-              style={{ gap: '0.25rem' }}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={volumeMode === 'window'}
+              className="toggle-switch-btn"
+              title={
+                volumeMode === 'window'
+                  ? 'Showing data transferred in timeframe. Toggle off to show cumulative total since boot.'
+                  : 'Showing cumulative total since boot. Toggle on to show data transferred in timeframe.'
+              }
+              onClick={() => setVolumeMode(prev => (prev === 'boot' ? 'window' : 'boot'))}
             >
-              <button
-                type="button"
-                className="btn-compact"
-                aria-pressed={volumeMode === 'boot'}
-                style={
-                  volumeMode === 'boot'
-                    ? {
-                        background: 'var(--monitor-primary)',
-                        color: '#ffffff',
-                        borderColor: 'var(--monitor-primary)'
-                      }
-                    : undefined
-                }
-                onClick={() => setVolumeMode('boot')}
-              >
-                Since boot
-              </button>
-              <button
-                type="button"
-                className="btn-compact"
-                aria-pressed={volumeMode === 'window'}
-                style={
-                  volumeMode === 'window'
-                    ? {
-                        background: 'var(--monitor-primary)',
-                        color: '#ffffff',
-                        borderColor: 'var(--monitor-primary)'
-                      }
-                    : undefined
-                }
-                onClick={() => setVolumeMode('window')}
-              >
-                In timeframe (+Δ)
-              </button>
-            </div>
+              <span>In timeframe</span>
+              <span className="toggle-switch-track" aria-hidden="true">
+                <span className="toggle-switch-thumb" />
+              </span>
+            </button>
             <button
               type="button"
               className="btn-compact"
@@ -1400,9 +1304,9 @@ export default function NetworkDashboard({
                 {volumeHelpExpanded && (
                   <>
                     {' '}
-                    Use <strong>Since boot</strong> to view total lifetime traffic for the instance,
-                    or switch to <strong>In timeframe (+Δ)</strong> to measure the exact amount of
-                    data downloaded and uploaded during the selected timeframe.
+                    Use the <strong>In timeframe</strong> toggle to switch between total lifetime
+                    traffic since instance boot (off) and the amount of data downloaded and uploaded
+                    during the selected timeframe (on).
                   </>
                 )}
                 <button

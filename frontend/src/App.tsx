@@ -510,7 +510,6 @@ export default function App() {
         <main id="main" className="page">
           <div className="page-header" data-no-print>
             <div className="page-heading-group">
-              <h1 className="page-title">Galaxy K8s Monitor</h1>
               <p className="telemetry-meta">
                 <span>
                   Namespace: <strong>{config?.namespace ?? '-'}</strong>
@@ -538,10 +537,6 @@ export default function App() {
                   {filteredSamples.length !== samples.length
                     ? ` (of ${samples.length.toLocaleString()})`
                     : ''}
-                </span>
-                <span className="meta-sep" aria-hidden="true">•</span>
-                <span>
-                  Source: <strong>{sourceLabel}</strong>
                 </span>
               </p>
             </div>
