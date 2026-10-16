@@ -31,6 +31,7 @@ export const MEMORY_RADAR_COLOR = '#7BA7CC';
 
 export const DISK_DATA_COLOR = '#5AA9A4';
 export const DISK_IMAGES_COLOR = '#7BA7CC';
+export const DISK_POSTGRES_COLOR = '#A29BFE';
 export const DISK_AVAILABLE_COLOR = '#25537b';
 export const DISK_PSI_SOME_COLOR = '#E6B86A';
 export const DISK_PSI_FULL_COLOR = '#A29BFE';

@@ -14,6 +14,9 @@ export type DiskSample = {
   galaxyPvcCapacityBytes?: number;
   galaxyPvcUsedBytes?: number;
   galaxyPvcAvailableBytes?: number;
+  postgresCapacityBytes?: number;
+  postgresUsedBytes?: number;
+  postgresAvailableBytes?: number;
   diskPressure: boolean;
   ioPsiSomeAvg10: number;
   ioPsiFullAvg10: number;

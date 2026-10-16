@@ -1,9 +1,14 @@
 package collector
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"math"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"galaxy-k8s-monitor/internal/model"
@@ -99,6 +104,208 @@ func (collector *Collector) Run(ctx context.Context) {
 	}
 }
 
+type cadvisorBlockDevice struct {
+	device     string
+	limitBytes int64
+	usageBytes int64
+}
+
+func extractPromLabel(labelsPart, key string) string {
+	prefix := key + `="`
+	idx := strings.Index(labelsPart, prefix)
+	if idx < 0 {
+		return ""
+	}
+	start := idx + len(prefix)
+	end := strings.IndexByte(labelsPart[start:], '"')
+	if end < 0 {
+		return ""
+	}
+	return labelsPart[start : start+end]
+}
+
+func parsePromLineValue(line string) (string, float64, bool) {
+	openIdx := strings.IndexByte(line, '{')
+	closeIdx := strings.LastIndexByte(line, '}')
+	if openIdx < 0 || closeIdx <= openIdx || closeIdx+1 >= len(line) {
+		return "", 0, false
+	}
+	labelsPart := line[openIdx+1 : closeIdx]
+	rest := strings.TrimSpace(line[closeIdx+1:])
+	if rest == "" {
+		return "", 0, false
+	}
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return "", 0, false
+	}
+	val, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil || math.IsNaN(val) || math.IsInf(val, 0) {
+		return "", 0, false
+	}
+	return labelsPart, val, true
+}
+
+func isSameDiskCapacity(a, b int64) bool {
+	if a <= 0 || b <= 0 {
+		return false
+	}
+	diff := math.Abs(float64(a - b))
+	denom := math.Max(float64(a), float64(b))
+	return (diff / denom) < 0.02
+}
+
+// enrichDiskFromCadvisor inspects raw /metrics/cadvisor text for mounted block devices
+// at id="/" (container="") and pod block I/O device associations to populate Postgres disk
+// usage (and fallback Galaxy PVC disk usage if not already populated from pod volume stats).
+func enrichDiskFromCadvisor(raw []byte, disk *model.DiskSample) bool {
+	if len(raw) == 0 || disk == nil {
+		return false
+	}
+
+	devices := map[string]*cadvisorBlockDevice{}
+	postgresDevices := map[string]bool{}
+	nfsDevices := map[string]bool{}
+
+	scanner := bufio.NewScanner(bytes.NewReader(raw))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "container_fs_limit_bytes{") {
+			labels, val, ok := parsePromLineValue(line)
+			if !ok {
+				continue
+			}
+			if extractPromLabel(labels, "id") != "/" || extractPromLabel(labels, "container") != "" {
+				continue
+			}
+			dev := extractPromLabel(labels, "device")
+			if !strings.HasPrefix(dev, "/dev/") || dev == "/dev/shm" {
+				continue
+			}
+			entry := devices[dev]
+			if entry == nil {
+				entry = &cadvisorBlockDevice{device: dev}
+				devices[dev] = entry
+			}
+			entry.limitBytes = int64(math.Round(val))
+		} else if strings.HasPrefix(line, "container_fs_usage_bytes{") {
+			labels, val, ok := parsePromLineValue(line)
+			if !ok {
+				continue
+			}
+			if extractPromLabel(labels, "id") != "/" || extractPromLabel(labels, "container") != "" {
+				continue
+			}
+			dev := extractPromLabel(labels, "device")
+			if !strings.HasPrefix(dev, "/dev/") || dev == "/dev/shm" {
+				continue
+			}
+			entry := devices[dev]
+			if entry == nil {
+				entry = &cadvisorBlockDevice{device: dev}
+				devices[dev] = entry
+			}
+			entry.usageBytes = int64(math.Round(val))
+		} else if strings.HasPrefix(line, "container_blkio_device_usage_total{") {
+			openIdx := strings.IndexByte(line, '{')
+			closeIdx := strings.LastIndexByte(line, '}')
+			if openIdx < 0 || closeIdx <= openIdx {
+				continue
+			}
+			labels := line[openIdx+1 : closeIdx]
+			pod := extractPromLabel(labels, "pod")
+			if pod == "" {
+				continue
+			}
+			dev := extractPromLabel(labels, "device")
+			if !strings.HasPrefix(dev, "/dev/") {
+				continue
+			}
+			if strings.Contains(pod, "postgres") {
+				postgresDevices[dev] = true
+			}
+			if strings.Contains(pod, "nfs-server-provisioner") {
+				nfsDevices[dev] = true
+			}
+		}
+	}
+
+	// Filter to real block devices >= 1 GB (ignoring tiny EFI partitions like /dev/sda15)
+	const minBlockDeviceBytes = 1_000_000_000
+	candidates := make([]*cadvisorBlockDevice, 0, len(devices))
+	for _, d := range devices {
+		if d.limitBytes >= minBlockDeviceBytes {
+			candidates = append(candidates, d)
+		}
+	}
+	if len(candidates) == 0 {
+		return false
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].device < candidates[j].device
+	})
+
+	var rootDevice string
+	for _, d := range candidates {
+		if isSameDiskCapacity(d.limitBytes, disk.NodeCapacityBytes) {
+			rootDevice = d.device
+			break
+		}
+	}
+
+	var galaxyDevice string
+	for _, d := range candidates {
+		if d.device == rootDevice {
+			continue
+		}
+		if (disk.GalaxyPVCCapacityBytes > 0 && isSameDiskCapacity(d.limitBytes, disk.GalaxyPVCCapacityBytes)) || nfsDevices[d.device] {
+			galaxyDevice = d.device
+			if disk.GalaxyPVCCapacityBytes == 0 {
+				disk.GalaxyPVCCapacityBytes = d.limitBytes
+				disk.GalaxyPVCUsedBytes = d.usageBytes
+				if avail := d.limitBytes - d.usageBytes; avail > 0 {
+					disk.GalaxyPVCAvailableBytes = avail
+				}
+			}
+			break
+		}
+	}
+
+	var pgDev *cadvisorBlockDevice
+	for _, d := range candidates {
+		if d.device == rootDevice || d.device == galaxyDevice {
+			continue
+		}
+		if postgresDevices[d.device] {
+			pgDev = d
+			break
+		}
+	}
+
+	if pgDev == nil {
+		for _, d := range candidates {
+			if d.device == rootDevice || d.device == galaxyDevice {
+				continue
+			}
+			pgDev = d
+			break
+		}
+	}
+
+	if pgDev != nil && pgDev.limitBytes > 0 {
+		disk.PostgresCapacityBytes = pgDev.limitBytes
+		disk.PostgresUsedBytes = pgDev.usageBytes
+		if avail := pgDev.limitBytes - pgDev.usageBytes; avail > 0 {
+			disk.PostgresAvailableBytes = avail
+		}
+		return true
+	}
+
+	return galaxyDevice != ""
+}
+
 func (collector *Collector) collectDiskSample(ctx context.Context, nodeList *corev1.NodeList) *model.DiskSample {
 	if nodeList == nil || len(nodeList.Items) == 0 {
 		return nil
@@ -173,6 +380,17 @@ func (collector *Collector) collectDiskSample(ctx context.Context, nodeList *cor
 			}
 			if disk.GalaxyPVCCapacityBytes > 0 {
 				break
+			}
+		}
+
+		cadvisorRaw, err := restClient.Get().
+			Resource("nodes").
+			Name(node.Name).
+			SubResource("proxy", "metrics", "cadvisor").
+			DoRaw(ctx)
+		if err == nil && len(cadvisorRaw) > 0 {
+			if enrichDiskFromCadvisor(cadvisorRaw, disk) {
+				hasData = true
 			}
 		}
 	}

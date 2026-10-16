@@ -18,6 +18,9 @@ type DiskSample struct {
 	GalaxyPVCCapacityBytes  int64   `json:"galaxyPvcCapacityBytes,omitempty"`
 	GalaxyPVCUsedBytes      int64   `json:"galaxyPvcUsedBytes,omitempty"`
 	GalaxyPVCAvailableBytes int64   `json:"galaxyPvcAvailableBytes,omitempty"`
+	PostgresCapacityBytes   int64   `json:"postgresCapacityBytes,omitempty"`
+	PostgresUsedBytes       int64   `json:"postgresUsedBytes,omitempty"`
+	PostgresAvailableBytes  int64   `json:"postgresAvailableBytes,omitempty"`
 	DiskPressure            bool    `json:"diskPressure"`
 	IOPsiSomeAvg10          float64 `json:"ioPsiSomeAvg10"`
 	IOPsiFullAvg10          float64 `json:"ioPsiFullAvg10"`

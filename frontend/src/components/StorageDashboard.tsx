@@ -21,6 +21,7 @@ import {
   DISK_DATA_COLOR,
   DISK_GC_LINE_COLOR,
   DISK_IMAGES_COLOR,
+  DISK_POSTGRES_COLOR,
   DISK_PSI_FULL_COLOR,
   DISK_PSI_SOME_COLOR,
   OVERDRAW_COLOR,
@@ -57,6 +58,11 @@ type StoragePoint = {
   galaxyPvcCapacityGiB: number;
   galaxyPvcUsedGiB: number;
   galaxyPvcAvailableGiB: number;
+  galaxyPvcUsedPct: number;
+  postgresCapacityGiB: number;
+  postgresUsedGiB: number;
+  postgresAvailableGiB: number;
+  postgresUsedPct: number;
   diskPressure: boolean;
   ioPsiSomePct: number;
   ioPsiFullPct: number;
@@ -83,6 +89,13 @@ type PressureEpisode = {
 };
 
 function formatIntGiB(valueGiB: number): string {
+  return `${Math.round(valueGiB).toLocaleString()} GiB`;
+}
+
+function formatCompactGiB(valueGiB: number): string {
+  if (valueGiB > 0 && valueGiB < 10) {
+    return `${valueGiB.toFixed(1)} GiB`;
+  }
   return `${Math.round(valueGiB).toLocaleString()} GiB`;
 }
 
@@ -201,7 +214,7 @@ function computePressureEpisodes(points: StoragePoint[]): PressureEpisode[] {
   return episodes;
 }
 
-function StorageUsageTooltip({
+function GalaxyDiskTooltip({
   active,
   payload,
   label
@@ -225,8 +238,144 @@ function StorageUsageTooltip({
       <div className="chart-tooltip-meta">Timestamp: {formattedTimestamp}</div>
       <div className="chart-tooltip-total">
         <div>
-          Total used: {formatGiB(point.usedGiB)} / {formatGiB(point.capacityGiB)} (
-          {point.usedPct.toFixed(1)}%)
+          Galaxy Data used: {formatGiB(point.galaxyPvcUsedGiB)} /{' '}
+          {formatGiB(point.galaxyPvcCapacityGiB)} ({point.galaxyPvcUsedPct.toFixed(1)}%)
+        </div>
+        <div
+          style={{
+            fontWeight: 400,
+            fontSize: '0.8rem',
+            color: 'var(--monitor-grey)',
+            marginTop: 2
+          }}
+        >
+          Free space: <strong>{formatGiB(point.galaxyPvcAvailableGiB)}</strong>
+        </div>
+      </div>
+
+      <div className="chart-tooltip-list">
+        <div className="chart-tooltip-row">
+          <span className="chart-tooltip-series">
+            <span
+              className="color-swatch"
+              style={{ background: DISK_DATA_COLOR }}
+              aria-hidden="true"
+            />
+            <span>Galaxy Data Used</span>
+          </span>
+          <strong>{formatGiB(point.galaxyPvcUsedGiB)}</strong>
+        </div>
+        <div className="chart-tooltip-row">
+          <span className="chart-tooltip-series">
+            <span
+              className="color-swatch"
+              style={{ background: DISK_AVAILABLE_COLOR }}
+              aria-hidden="true"
+            />
+            <span>Available Free Space</span>
+          </span>
+          <strong>{formatGiB(point.galaxyPvcAvailableGiB)}</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PostgresDiskTooltip({
+  active,
+  payload,
+  label
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: StoragePoint }>;
+  label?: string;
+}) {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  const point = payload[0].payload;
+  const formattedTimestamp = point.timestamp
+    ? new Date(point.timestamp).toLocaleString()
+    : '-';
+
+  return (
+    <div className="chart-tooltip">
+      <div className="chart-tooltip-meta">Elapsed time: {label}</div>
+      <div className="chart-tooltip-meta">Timestamp: {formattedTimestamp}</div>
+      <div className="chart-tooltip-total">
+        <div>
+          Postgres DB used: {formatGiB(point.postgresUsedGiB)} /{' '}
+          {formatGiB(point.postgresCapacityGiB)} ({point.postgresUsedPct.toFixed(1)}%)
+        </div>
+        <div
+          style={{
+            fontWeight: 400,
+            fontSize: '0.8rem',
+            color: 'var(--monitor-grey)',
+            marginTop: 2
+          }}
+        >
+          Free space: <strong>{formatGiB(point.postgresAvailableGiB)}</strong>
+        </div>
+      </div>
+
+      <div className="chart-tooltip-list">
+        <div className="chart-tooltip-row">
+          <span className="chart-tooltip-series">
+            <span
+              className="color-swatch"
+              style={{ background: DISK_POSTGRES_COLOR }}
+              aria-hidden="true"
+            />
+            <span>Postgres Database Used</span>
+          </span>
+          <strong>{formatGiB(point.postgresUsedGiB)}</strong>
+        </div>
+        <div className="chart-tooltip-row">
+          <span className="chart-tooltip-series">
+            <span
+              className="color-swatch"
+              style={{ background: DISK_AVAILABLE_COLOR }}
+              aria-hidden="true"
+            />
+            <span>Available Free Space</span>
+          </span>
+          <strong>{formatGiB(point.postgresAvailableGiB)}</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StorageUsageTooltip({
+  active,
+  payload,
+  label,
+  isDedicatedSystemDisk
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: StoragePoint }>;
+  label?: string;
+  isDedicatedSystemDisk?: boolean;
+}) {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  const point = payload[0].payload;
+  const formattedTimestamp = point.timestamp
+    ? new Date(point.timestamp).toLocaleString()
+    : '-';
+
+  return (
+    <div className="chart-tooltip">
+      <div className="chart-tooltip-meta">Elapsed time: {label}</div>
+      <div className="chart-tooltip-meta">Timestamp: {formattedTimestamp}</div>
+      <div className="chart-tooltip-total">
+        <div>
+          {isDedicatedSystemDisk ? 'System disk used' : 'Total used'}: {formatGiB(point.usedGiB)} /{' '}
+          {formatGiB(point.capacityGiB)} ({point.usedPct.toFixed(1)}%)
         </div>
         <div
           style={{
@@ -253,7 +402,11 @@ function StorageUsageTooltip({
               style={{ background: DISK_DATA_COLOR }}
               aria-hidden="true"
             />
-            <span>Data, Volumes &amp; System</span>
+            <span>
+              {isDedicatedSystemDisk
+                ? 'System, Logs & Ephemeral Volumes'
+                : 'Data, Volumes & System'}
+            </span>
           </span>
           <strong>{formatGiB(point.dataAndSystemGiB)}</strong>
         </div>
@@ -327,7 +480,7 @@ function DiskPressureTooltip({
             marginTop: 2
           }}
         >
-          Disk space used: {point.usedPct.toFixed(1)}% ({formatGiB(point.availableGiB)} free)
+          System disk used: {point.usedPct.toFixed(1)}% ({formatGiB(point.availableGiB)} free)
         </div>
       </div>
 
@@ -366,7 +519,9 @@ export default function StorageDashboard({
   printMetadata
 }: Props) {
   const [zoomRange, setZoomRange] = useState<ZoomRange | null>(null);
+  const [galaxyCollapsed, setGalaxyCollapsed] = useState(false);
   const [usageCollapsed, setUsageCollapsed] = useState(false);
+  const [postgresCollapsed, setPostgresCollapsed] = useState(false);
   const [pressureCollapsed, setPressureCollapsed] = useState(false);
   const [usageHelpExpanded, setUsageHelpExpanded] = useState(false);
   const [pressureHelpExpanded, setPressureHelpExpanded] = useState(false);
@@ -376,7 +531,9 @@ export default function StorageDashboard({
   const [dragEndSampleIndex, setDragEndSampleIndex] = useState<number | null>(null);
   const suppressNextClickRef = useRef(false);
 
+  const galaxyBodyId = useId();
   const usageBodyId = useId();
+  const postgresBodyId = useId();
   const pressureBodyId = useId();
 
   useEffect(() => {
@@ -399,6 +556,18 @@ export default function StorageDashboard({
       const dataAndSystemGiB = Math.max(0, usedGiB - imageUsedGiB);
       const usedPct = capacityGiB > 0 ? (usedGiB / capacityGiB) * 100 : 0;
 
+      const galaxyPvcCapacityGiB = bytesToGiB(disk.galaxyPvcCapacityBytes ?? 0);
+      const galaxyPvcUsedGiB = bytesToGiB(disk.galaxyPvcUsedBytes ?? 0);
+      const galaxyPvcAvailableGiB = bytesToGiB(disk.galaxyPvcAvailableBytes ?? 0);
+      const galaxyPvcUsedPct =
+        galaxyPvcCapacityGiB > 0 ? (galaxyPvcUsedGiB / galaxyPvcCapacityGiB) * 100 : 0;
+
+      const postgresCapacityGiB = bytesToGiB(disk.postgresCapacityBytes ?? 0);
+      const postgresUsedGiB = bytesToGiB(disk.postgresUsedBytes ?? 0);
+      const postgresAvailableGiB = bytesToGiB(disk.postgresAvailableBytes ?? 0);
+      const postgresUsedPct =
+        postgresCapacityGiB > 0 ? (postgresUsedGiB / postgresCapacityGiB) * 100 : 0;
+
       return {
         sampleIndex,
         relativeTime: relativeTime(sample.timestamp, firstTimestamp),
@@ -411,9 +580,14 @@ export default function StorageDashboard({
         usedPct,
         gcThresholdGiB: capacityGiB * 0.85,
         evictionThresholdGiB: capacityGiB * 0.9,
-        galaxyPvcCapacityGiB: bytesToGiB(disk.galaxyPvcCapacityBytes ?? 0),
-        galaxyPvcUsedGiB: bytesToGiB(disk.galaxyPvcUsedBytes ?? 0),
-        galaxyPvcAvailableGiB: bytesToGiB(disk.galaxyPvcAvailableBytes ?? 0),
+        galaxyPvcCapacityGiB,
+        galaxyPvcUsedGiB,
+        galaxyPvcAvailableGiB,
+        galaxyPvcUsedPct,
+        postgresCapacityGiB,
+        postgresUsedGiB,
+        postgresAvailableGiB,
+        postgresUsedPct,
         diskPressure: Boolean(disk.diskPressure),
         ioPsiSomePct: disk.ioPsiSomeAvg10 ?? 0,
         ioPsiFullPct: disk.ioPsiFullAvg10 ?? 0
@@ -483,6 +657,52 @@ export default function StorageDashboard({
     const pressureSampleCount = storagePoints.filter(pt => pt.diskPressure).length;
     const peakUsedPct = latest.capacityGiB > 0 ? (peakUsedGiB / latest.capacityGiB) * 100 : 0;
 
+    // Galaxy Data Disk peaks
+    const galaxyPoints = storagePoints.filter(pt => pt.galaxyPvcCapacityGiB > 0);
+    const peakGalaxyPoint =
+      galaxyPoints.length > 0
+        ? galaxyPoints.reduce(
+            (maxPt, pt) => (pt.galaxyPvcUsedGiB >= maxPt.galaxyPvcUsedGiB ? pt : maxPt),
+            galaxyPoints[0]
+          )
+        : latest;
+    const peakGalaxyUsedGiB = peakGalaxyPoint.galaxyPvcUsedGiB;
+    const peakGalaxyTimestamp = peakGalaxyPoint.timestamp;
+    const peakGalaxyUsedPct =
+      latest.galaxyPvcCapacityGiB > 0
+        ? (peakGalaxyUsedGiB / latest.galaxyPvcCapacityGiB) * 100
+        : 0;
+    const minGalaxyAvailableGiB =
+      galaxyPoints.length > 0
+        ? galaxyPoints.reduce(
+            (min, pt) => Math.min(min, pt.galaxyPvcAvailableGiB),
+            latest.galaxyPvcAvailableGiB
+          )
+        : latest.galaxyPvcAvailableGiB;
+
+    // Postgres Disk peaks
+    const postgresPoints = storagePoints.filter(pt => pt.postgresCapacityGiB > 0);
+    const peakPostgresPoint =
+      postgresPoints.length > 0
+        ? postgresPoints.reduce(
+            (maxPt, pt) => (pt.postgresUsedGiB >= maxPt.postgresUsedGiB ? pt : maxPt),
+            postgresPoints[0]
+          )
+        : latest;
+    const peakPostgresUsedGiB = peakPostgresPoint.postgresUsedGiB;
+    const peakPostgresTimestamp = peakPostgresPoint.timestamp;
+    const peakPostgresUsedPct =
+      latest.postgresCapacityGiB > 0
+        ? (peakPostgresUsedGiB / latest.postgresCapacityGiB) * 100
+        : 0;
+    const minPostgresAvailableGiB =
+      postgresPoints.length > 0
+        ? postgresPoints.reduce(
+            (min, pt) => Math.min(min, pt.postgresAvailableGiB),
+            latest.postgresAvailableGiB
+          )
+        : latest.postgresAvailableGiB;
+
     // 5-minute rolling average for the Disk I/O Wait card so brief single-sample dips/spikes
     // don't misrepresent recent I/O contention.
     const latestMs = new Date(latest.timestamp).getTime();
@@ -501,6 +721,10 @@ export default function StorageDashboard({
       latest.galaxyPvcCapacityGiB > 0 &&
       Math.abs(latest.galaxyPvcCapacityGiB - latest.capacityGiB) > 1;
 
+    const hasPostgresDisk =
+      latest.postgresCapacityGiB > 0 &&
+      Math.abs(latest.postgresCapacityGiB - latest.capacityGiB) > 1;
+
     return {
       latest,
       peakUsedGiB,
@@ -508,12 +732,21 @@ export default function StorageDashboard({
       peakTimestamp,
       minAvailableGiB,
       peakImageGiB,
+      peakGalaxyUsedGiB,
+      peakGalaxyUsedPct,
+      peakGalaxyTimestamp,
+      minGalaxyAvailableGiB,
+      peakPostgresUsedGiB,
+      peakPostgresUsedPct,
+      peakPostgresTimestamp,
+      minPostgresAvailableGiB,
       peakPsiSomePct,
       peakPsiFullPct,
       recentPsiSomePct,
       recentPsiFullPct,
       pressureSampleCount,
-      hasDedicatedGalaxyDisk
+      hasDedicatedGalaxyDisk,
+      hasPostgresDisk
     };
   }, [storagePoints]);
 
@@ -555,6 +788,7 @@ export default function StorageDashboard({
   }
 
   const { latest } = summary;
+  const isMultiDisk = summary.hasDedicatedGalaxyDisk || summary.hasPostgresDisk;
   const imageSharePct =
     latest.capacityGiB > 0 ? (latest.imageUsedGiB / latest.capacityGiB) * 100 : 0;
   const peakImageSharePct =
@@ -583,6 +817,25 @@ export default function StorageDashboard({
   const warningToggleTitle = isBannerDismissed
     ? 'Show low-disk warning summary box below cards'
     : 'Hide low-disk warning summary box below cards';
+
+  const galaxyDiskMeterTooltip = [
+    `Current Galaxy Data used (solid): ${formatCompactGiB(latest.galaxyPvcUsedGiB)} of ${formatIntGiB(latest.galaxyPvcCapacityGiB)} (${latest.galaxyPvcUsedPct.toFixed(1)}%) — ${formatCompactGiB(latest.galaxyPvcAvailableGiB)} free`,
+    `Peak Galaxy Data used (shaded): ${formatCompactGiB(summary.peakGalaxyUsedGiB)} of ${formatIntGiB(latest.galaxyPvcCapacityGiB)} (${summary.peakGalaxyUsedPct.toFixed(1)}% at ${formatShortTime(summary.peakGalaxyTimestamp)}) — lowest free: ${formatCompactGiB(summary.minGalaxyAvailableGiB)}`,
+    '• Dedicated Galaxy storage (/mnt/block_storage): user datasets, job working directories, uploads, and CVMFS cache'
+  ].join('\n');
+
+  const systemDiskMeterTooltip = [
+    `Current system disk used (solid): ${formatCompactGiB(latest.usedGiB)} of ${formatIntGiB(latest.capacityGiB)} (${latest.usedPct.toFixed(1)}%) — ${formatCompactGiB(latest.availableGiB)} free (${formatCompactGiB(latest.imageUsedGiB)} in container images)`,
+    `Peak system disk used (shaded): ${formatCompactGiB(summary.peakUsedGiB)} of ${formatIntGiB(latest.capacityGiB)} (${summary.peakUsedPct.toFixed(1)}% at ${formatShortTime(summary.peakTimestamp)}) — lowest free: ${formatCompactGiB(summary.minAvailableGiB)}`,
+    `• Amber vertical mark (85% / ${formatIntGiB(latest.gcThresholdGiB)}): Auto-cleanup threshold — unused container images are automatically removed above this level`,
+    `• Dark vertical mark (90% / ${formatIntGiB(latest.evictionThresholdGiB)}): Disk pressure limit — running jobs may be stopped above this level to free disk space`
+  ].join('\n');
+
+  const postgresDiskMeterTooltip = [
+    `Current Postgres DB used (solid): ${formatGiB(latest.postgresUsedGiB)} of ${formatIntGiB(latest.postgresCapacityGiB)} (${latest.postgresUsedPct.toFixed(1)}%) — ${formatGiB(latest.postgresAvailableGiB)} free`,
+    `Peak Postgres DB used (shaded): ${formatGiB(summary.peakPostgresUsedGiB)} of ${formatIntGiB(latest.postgresCapacityGiB)} (${summary.peakPostgresUsedPct.toFixed(1)}% at ${formatShortTime(summary.peakPostgresTimestamp)}) — lowest free: ${formatGiB(summary.minPostgresAvailableGiB)}`,
+    '• Dedicated database storage (/mnt/postgres_storage): Galaxy & Rainstone PostgreSQL databases'
+  ].join('\n');
 
   const currentDiskMeterTooltip = [
     `Current disk used: ${formatIntGiB(latest.usedGiB)} of ${formatIntGiB(latest.capacityGiB)} (${latest.usedPct.toFixed(1)}%) — ${formatIntGiB(latest.availableGiB)} free`,
@@ -616,6 +869,47 @@ export default function StorageDashboard({
     });
   };
 
+  const handleChartMouseDown = (state: {
+    activePayload?: Array<{ payload?: StoragePoint }>;
+  }) => {
+    const sampleIndex = getSampleIndexFromState(state);
+    if (sampleIndex === null) return;
+    setDragStartSampleIndex(sampleIndex);
+    setDragEndSampleIndex(sampleIndex);
+  };
+
+  const handleChartMouseMove = (state: {
+    activePayload?: Array<{ payload?: StoragePoint }>;
+  }) => {
+    if (dragStartSampleIndex === null) return;
+    const sampleIndex = getSampleIndexFromState(state);
+    if (sampleIndex === null) return;
+    setDragEndSampleIndex(sampleIndex);
+  };
+
+  const handleChartMouseUp = (state: {
+    activePayload?: Array<{ payload?: StoragePoint }>;
+  }) => {
+    if (dragStartSampleIndex === null) return;
+    const fallback = getSampleIndexFromState(state);
+    const end = dragEndSampleIndex ?? fallback;
+    if (end !== null && end !== dragStartSampleIndex) {
+      setZoomRange({
+        startSampleIndex: Math.min(dragStartSampleIndex, end),
+        endSampleIndex: Math.max(dragStartSampleIndex, end)
+      });
+      suppressNextClickRef.current = true;
+    }
+    setDragStartSampleIndex(null);
+    setDragEndSampleIndex(null);
+  };
+
+  const resetZoom = () => {
+    setZoomRange(null);
+    setDragStartSampleIndex(null);
+    setDragEndSampleIndex(null);
+  };
+
   return (
     <div data-print-content className="dashboard-stack">
       <div className="print-summary-header">
@@ -647,15 +941,7 @@ export default function StorageDashboard({
         createPortal(
           <>
             <span className="interaction-pill">Zoom: {zoomWindowLabel}</span>
-            <button
-              type="button"
-              className="btn-compact"
-              onClick={() => {
-                setZoomRange(null);
-                setDragStartSampleIndex(null);
-                setDragEndSampleIndex(null);
-              }}
-            >
+            <button type="button" className="btn-compact" onClick={resetZoom}>
               Reset zoom
             </button>
           </>,
@@ -664,280 +950,688 @@ export default function StorageDashboard({
 
       <section className="stats-section" aria-label="Storage utilization summary">
         <div className="stats-header-bar">
-          <span>
-            Node disk capacity: <strong>{formatIntGiB(latest.capacityGiB)}</strong> (markers at{' '}
-            <strong>85%</strong> auto-cleanup of unused images and <strong>90%</strong> disk
-            pressure limit)
-          </span>
+          {isMultiDisk ? (
+            <span>
+              Storage capacities:{' '}
+              {summary.hasDedicatedGalaxyDisk && (
+                <>
+                  Galaxy Data <strong>{formatIntGiB(latest.galaxyPvcCapacityGiB)}</strong> ·{' '}
+                </>
+              )}
+              System &amp; Images <strong>{formatIntGiB(latest.capacityGiB)}</strong> (markers at{' '}
+              <strong>85%</strong> auto-cleanup / <strong>90%</strong> limit)
+              {summary.hasPostgresDisk && (
+                <>
+                  {' '}
+                  · Postgres DB <strong>{formatIntGiB(latest.postgresCapacityGiB)}</strong>
+                </>
+              )}
+            </span>
+          ) : (
+            <span>
+              Node disk capacity: <strong>{formatIntGiB(latest.capacityGiB)}</strong> (markers at{' '}
+              <strong>85%</strong> auto-cleanup of unused images and <strong>90%</strong> disk
+              pressure limit)
+            </span>
+          )}
           <span className="badge-scope">
-            {summary.hasDedicatedGalaxyDisk
-              ? 'Dedicated Galaxy Disk + System Disk'
+            {summary.hasDedicatedGalaxyDisk && summary.hasPostgresDisk
+              ? '3-Disk Setup (Galaxy Data · System · Postgres)'
+              : summary.hasDedicatedGalaxyDisk
+              ? '2-Disk Setup (Galaxy Data · System)'
               : 'Shared System & Galaxy Disk'}
           </span>
         </div>
 
         <div className="stats-grid">
-          {/* Card 1: Current Disk */}
-          <div className="stat-card">
-            <div className="stat-card-header">
-              <span className="stat-label">Current Disk</span>
-              <span className="stat-pct">{latest.usedPct.toFixed(1)}%</span>
-            </div>
-            <div className="stat-value">
-              {formatIntGiB(latest.usedGiB)} / {formatIntGiB(latest.capacityGiB)}
-            </div>
-            <div className="stat-meter-wrapper" tabIndex={0} aria-label={currentDiskMeterTooltip}>
-              <div className="stat-meter" role="img" aria-label={currentDiskMeterTooltip}>
-                <div
-                  className="stat-meter-fill"
-                  style={{
-                    width: `${Math.min(100, latest.usedPct)}%`,
-                    background: DISK_DATA_COLOR
-                  }}
-                />
-                <div
-                  className="stat-meter-marker"
-                  style={{ left: 'calc(85% - 1.5px)', background: DISK_GC_LINE_COLOR }}
-                />
-                <div
-                  className="stat-meter-marker"
-                  style={{ left: 'calc(90% - 1.5px)' }}
-                />
-              </div>
-              <div className="stat-meter-tooltip" role="tooltip">
-                <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-swatch"
-                    style={{ background: DISK_DATA_COLOR }}
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <strong>Current used:</strong> {formatIntGiB(latest.usedGiB)} of{' '}
-                    {formatIntGiB(latest.capacityGiB)} ({latest.usedPct.toFixed(1)}%) —{' '}
-                    {formatIntGiB(latest.availableGiB)} free
-                  </span>
+          {isMultiDisk ? (
+            <>
+              {/* Card 1: Galaxy Data Disk */}
+              <div className="stat-card">
+                <div className="stat-card-header">
+                  <span className="stat-label">Galaxy Data Disk</span>
+                  <span className="stat-pct">{latest.galaxyPvcUsedPct.toFixed(1)}%</span>
                 </div>
-                <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-mark"
-                    style={{ background: DISK_GC_LINE_COLOR }}
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <strong>85% mark ({formatIntGiB(latest.gcThresholdGiB)}):</strong> Auto-cleanup
-                    threshold for unused container images
-                  </span>
+                <div className="stat-value">
+                  {formatCompactGiB(latest.galaxyPvcUsedGiB)} /{' '}
+                  {formatIntGiB(latest.galaxyPvcCapacityGiB)}
                 </div>
-                <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-mark"
-                    style={{ background: REQUEST_LINE_COLOR }}
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <strong>90% mark ({formatIntGiB(latest.evictionThresholdGiB)}):</strong> Disk
-                    pressure threshold where running jobs may be stopped
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="stat-secondary">
-              <span>
-                Free: <strong>{formatIntGiB(latest.availableGiB)}</strong>
-              </span>
-              {latest.usedPct >= 90 ? (
-                latestEpisode ? (
-                  <button
-                    type="button"
-                    className="btn-warning-link"
-                    data-resolved="false"
-                    data-active={!isBannerDismissed ? 'true' : 'false'}
-                    aria-expanded={!isBannerDismissed}
-                    title={warningToggleTitle}
-                    onClick={toggleWarningBanner}
-                  >
-                    <span>Over 90% limit</span>
-                    <ChevronDown
-                      size={13}
-                      className="btn-warning-chevron"
-                      aria-hidden="true"
-                    />
-                  </button>
-                ) : (
-                  <span className="text-overdraw">Over 90% limit</span>
-                )
-              ) : latest.usedPct >= 85 ? (
-                <span style={{ color: DISK_GC_LINE_COLOR, fontWeight: 700 }}>
-                  Over 85% auto-cleanup
-                </span>
-              ) : null}
-            </div>
-          </div>
-
-          {/* Card 2: Peak Disk */}
-          <div className="stat-card">
-            <div className="stat-card-header">
-              <span className="stat-label">Peak Disk</span>
-              <span className="stat-pct">
-                {summary.peakUsedPct.toFixed(1)}%{' '}
-                <span className="stat-pct-sub">at {formatShortTime(summary.peakTimestamp)}</span>
-              </span>
-            </div>
-            <div className="stat-value">
-              {formatIntGiB(summary.peakUsedGiB)} / {formatIntGiB(latest.capacityGiB)}
-            </div>
-            <div className="stat-meter-wrapper" tabIndex={0} aria-label={peakDiskMeterTooltip}>
-              <div className="stat-meter" role="img" aria-label={peakDiskMeterTooltip}>
                 <div
-                  className="stat-meter-fill"
-                  style={{
-                    width: `${Math.min(100, summary.peakUsedPct)}%`,
-                    background: DISK_AVAILABLE_COLOR
-                  }}
-                />
-                <div
-                  className="stat-meter-marker"
-                  style={{ left: 'calc(85% - 1.5px)', background: DISK_GC_LINE_COLOR }}
-                />
-                <div
-                  className="stat-meter-marker"
-                  style={{ left: 'calc(90% - 1.5px)' }}
-                />
-              </div>
-              <div className="stat-meter-tooltip" role="tooltip">
-                <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-swatch"
-                    style={{ background: DISK_AVAILABLE_COLOR }}
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <strong>Peak used:</strong> {formatIntGiB(summary.peakUsedGiB)} of{' '}
-                    {formatIntGiB(latest.capacityGiB)} ({summary.peakUsedPct.toFixed(1)}% at{' '}
-                    {formatShortTime(summary.peakTimestamp)}) — lowest free:{' '}
-                    {formatIntGiB(summary.minAvailableGiB)}
-                  </span>
-                </div>
-                <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-mark"
-                    style={{ background: DISK_GC_LINE_COLOR }}
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <strong>85% mark ({formatIntGiB(latest.gcThresholdGiB)}):</strong> Auto-cleanup
-                    threshold for unused container images
-                  </span>
-                </div>
-                <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-mark"
-                    style={{ background: REQUEST_LINE_COLOR }}
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <strong>90% mark ({formatIntGiB(latest.evictionThresholdGiB)}):</strong> Disk
-                    pressure threshold where running jobs may be stopped
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="stat-secondary">
-              <span>
-                Lowest free: <strong>{formatIntGiB(summary.minAvailableGiB)}</strong>
-              </span>
-              {pressureEpisodes.length > 0 && latestEpisode ? (
-                <button
-                  type="button"
-                  className="btn-warning-link"
-                  data-resolved={!latest.diskPressure ? 'true' : 'false'}
-                  data-active={!isBannerDismissed ? 'true' : 'false'}
-                  aria-expanded={!isBannerDismissed}
-                  title={warningToggleTitle}
-                  onClick={toggleWarningBanner}
+                  className="stat-meter-wrapper"
+                  tabIndex={0}
+                  aria-label={galaxyDiskMeterTooltip}
                 >
+                  <div className="stat-meter" role="img" aria-label={galaxyDiskMeterTooltip}>
+                    {summary.peakGalaxyUsedPct > 0 && (
+                      <div
+                        className="stat-meter-peak-fill"
+                        style={{
+                          width: `${Math.min(100, summary.peakGalaxyUsedPct)}%`,
+                          background: 'rgba(90, 169, 164, 0.25)',
+                          borderRightColor: 'rgba(90, 169, 164, 0.7)'
+                        }}
+                      />
+                    )}
+                    <div
+                      className="stat-meter-fill"
+                      style={{
+                        width: `${Math.min(100, latest.galaxyPvcUsedPct)}%`,
+                        background: DISK_DATA_COLOR
+                      }}
+                    />
+                  </div>
+                  <div className="stat-meter-tooltip" role="tooltip">
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-swatch"
+                        style={{ background: DISK_DATA_COLOR }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>Current used (solid):</strong>{' '}
+                        {formatCompactGiB(latest.galaxyPvcUsedGiB)} of{' '}
+                        {formatIntGiB(latest.galaxyPvcCapacityGiB)} (
+                        {latest.galaxyPvcUsedPct.toFixed(1)}%) —{' '}
+                        {formatCompactGiB(latest.galaxyPvcAvailableGiB)} free
+                      </span>
+                    </div>
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-swatch"
+                        style={{
+                          background: 'rgba(90, 169, 164, 0.28)',
+                          border: '1px solid rgba(90, 169, 164, 0.7)'
+                        }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>Peak used (shaded):</strong>{' '}
+                        {formatCompactGiB(summary.peakGalaxyUsedGiB)} of{' '}
+                        {formatIntGiB(latest.galaxyPvcCapacityGiB)} (
+                        {summary.peakGalaxyUsedPct.toFixed(1)}% at{' '}
+                        {formatShortTime(summary.peakGalaxyTimestamp)}) — lowest free:{' '}
+                        {formatCompactGiB(summary.minGalaxyAvailableGiB)}
+                      </span>
+                    </div>
+                    <div className="stat-meter-tooltip-row">
+                      <span>
+                        <strong>Mount (/mnt/block_storage):</strong> User datasets, job working
+                        directories, uploads &amp; CVMFS cache
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="stat-secondary">
                   <span>
-                    {pressureEpisodes.length}{' '}
-                    {pressureEpisodes.length === 1 ? 'episode' : 'episodes'}
+                    Free: <strong>{formatCompactGiB(latest.galaxyPvcAvailableGiB)}</strong>
                   </span>
-                  <ChevronDown
-                    size={13}
-                    className="btn-warning-chevron"
-                    aria-hidden="true"
-                  />
-                </button>
-              ) : summary.peakUsedPct >= 90 ? (
-                <span className="text-overdraw">&gt;90% limit</span>
-              ) : null}
-            </div>
-          </div>
+                  <span>
+                    Peak: <strong>{summary.peakGalaxyUsedPct.toFixed(1)}%</strong>
+                  </span>
+                </div>
+              </div>
 
-          {/* Card 3: Container Images */}
-          <div className="stat-card">
-            <div className="stat-card-header">
-              <span className="stat-label">Container Images</span>
-              <span className="stat-pct">{imageSharePct.toFixed(1)}%</span>
-            </div>
-            <div className="stat-value">
-              {formatIntGiB(latest.imageUsedGiB)} / {formatIntGiB(latest.capacityGiB)}
-            </div>
-            <div className="stat-meter-wrapper" tabIndex={0} aria-label={imagesMeterTooltip}>
-              <div className="stat-meter" role="img" aria-label={imagesMeterTooltip}>
-                {peakImageSharePct > 0 && (
-                  <div
-                    className="stat-meter-peak-fill"
-                    style={{
-                      width: `${Math.min(100, peakImageSharePct)}%`,
-                      background: 'rgba(124, 58, 237, 0.25)',
-                      borderRightColor: 'rgba(124, 58, 237, 0.65)'
-                    }}
-                  />
-                )}
+              {/* Card 2: System & Images Disk */}
+              <div className="stat-card">
+                <div className="stat-card-header">
+                  <span className="stat-label">System &amp; Images Disk</span>
+                  <span className="stat-pct">{latest.usedPct.toFixed(1)}%</span>
+                </div>
+                <div className="stat-value">
+                  {formatCompactGiB(latest.usedGiB)} / {formatIntGiB(latest.capacityGiB)}
+                </div>
                 <div
-                  className="stat-meter-fill"
-                  style={{
-                    width: `${Math.min(100, imageSharePct)}%`,
-                    background: DISK_IMAGES_COLOR
-                  }}
-                />
-              </div>
-              <div className="stat-meter-tooltip" role="tooltip">
-                <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-swatch"
-                    style={{ background: DISK_IMAGES_COLOR }}
-                    aria-hidden="true"
-                  />
+                  className="stat-meter-wrapper"
+                  tabIndex={0}
+                  aria-label={systemDiskMeterTooltip}
+                >
+                  <div className="stat-meter" role="img" aria-label={systemDiskMeterTooltip}>
+                    {summary.peakUsedPct > 0 && (
+                      <div
+                        className="stat-meter-peak-fill"
+                        style={{
+                          width: `${Math.min(100, summary.peakUsedPct)}%`,
+                          background: 'rgba(123, 167, 204, 0.25)',
+                          borderRightColor: 'rgba(123, 167, 204, 0.7)'
+                        }}
+                      />
+                    )}
+                    <div
+                      className="stat-meter-fill"
+                      style={{
+                        width: `${Math.min(100, latest.usedPct)}%`,
+                        background: DISK_IMAGES_COLOR
+                      }}
+                    />
+                    <div
+                      className="stat-meter-marker"
+                      style={{ left: 'calc(85% - 1.5px)', background: DISK_GC_LINE_COLOR }}
+                    />
+                    <div
+                      className="stat-meter-marker"
+                      style={{ left: 'calc(90% - 1.5px)' }}
+                    />
+                  </div>
+                  <div className="stat-meter-tooltip" role="tooltip">
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-swatch"
+                        style={{ background: DISK_IMAGES_COLOR }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>Current used (solid):</strong> {formatCompactGiB(latest.usedGiB)}{' '}
+                        of {formatIntGiB(latest.capacityGiB)} ({latest.usedPct.toFixed(1)}%) —{' '}
+                        {formatCompactGiB(latest.availableGiB)} free (
+                        {formatCompactGiB(latest.imageUsedGiB)} in container images)
+                      </span>
+                    </div>
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-swatch"
+                        style={{
+                          background: 'rgba(123, 167, 204, 0.28)',
+                          border: '1px solid rgba(123, 167, 204, 0.7)'
+                        }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>Peak used (shaded):</strong>{' '}
+                        {formatCompactGiB(summary.peakUsedGiB)} of{' '}
+                        {formatIntGiB(latest.capacityGiB)} ({summary.peakUsedPct.toFixed(1)}% at{' '}
+                        {formatShortTime(summary.peakTimestamp)}) — lowest free:{' '}
+                        {formatCompactGiB(summary.minAvailableGiB)}
+                      </span>
+                    </div>
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-mark"
+                        style={{ background: DISK_GC_LINE_COLOR }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>85% mark ({formatIntGiB(latest.gcThresholdGiB)}):</strong>{' '}
+                        Auto-cleanup threshold for unused container images
+                      </span>
+                    </div>
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-mark"
+                        style={{ background: REQUEST_LINE_COLOR }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>90% mark ({formatIntGiB(latest.evictionThresholdGiB)}):</strong>{' '}
+                        Disk pressure threshold where running jobs may be stopped
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="stat-secondary">
                   <span>
-                    <strong>Current images (solid):</strong>{' '}
-                    {formatIntGiB(latest.imageUsedGiB)} of {formatIntGiB(latest.capacityGiB)} (
-                    {imageSharePct.toFixed(1)}% of disk)
+                    Free: <strong>{formatCompactGiB(latest.availableGiB)}</strong>
+                  </span>
+                  {pressureEpisodes.length > 0 && latestEpisode ? (
+                    <button
+                      type="button"
+                      className="btn-warning-link"
+                      data-resolved={!latest.diskPressure ? 'true' : 'false'}
+                      data-active={!isBannerDismissed ? 'true' : 'false'}
+                      aria-expanded={!isBannerDismissed}
+                      title={warningToggleTitle}
+                      onClick={toggleWarningBanner}
+                    >
+                      <span>
+                        {pressureEpisodes.length}{' '}
+                        {pressureEpisodes.length === 1 ? 'episode' : 'episodes'}
+                      </span>
+                      <ChevronDown
+                        size={13}
+                        className="btn-warning-chevron"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  ) : latest.usedPct >= 85 ? (
+                    <span style={{ color: DISK_GC_LINE_COLOR, fontWeight: 700 }}>
+                      Over 85%
+                    </span>
+                  ) : (
+                    <span>
+                      Peak: <strong>{summary.peakUsedPct.toFixed(1)}%</strong>
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Card 3: Postgres DB Disk (or Container Images if 2-disk) */}
+              {summary.hasPostgresDisk ? (
+                <div className="stat-card">
+                  <div className="stat-card-header">
+                    <span className="stat-label">Postgres DB Disk</span>
+                    <span className="stat-pct">{latest.postgresUsedPct.toFixed(1)}%</span>
+                  </div>
+                  <div className="stat-value">
+                    {formatCompactGiB(latest.postgresUsedGiB)} /{' '}
+                    {formatIntGiB(latest.postgresCapacityGiB)}
+                  </div>
+                  <div
+                    className="stat-meter-wrapper"
+                    tabIndex={0}
+                    aria-label={postgresDiskMeterTooltip}
+                  >
+                    <div className="stat-meter" role="img" aria-label={postgresDiskMeterTooltip}>
+                      {summary.peakPostgresUsedPct > 0 && (
+                        <div
+                          className="stat-meter-peak-fill"
+                          style={{
+                            width: `${Math.min(100, summary.peakPostgresUsedPct)}%`,
+                            background: 'rgba(162, 155, 254, 0.25)',
+                            borderRightColor: 'rgba(162, 155, 254, 0.7)'
+                          }}
+                        />
+                      )}
+                      <div
+                        className="stat-meter-fill"
+                        style={{
+                          width: `${Math.min(100, latest.postgresUsedPct)}%`,
+                          background: DISK_POSTGRES_COLOR
+                        }}
+                      />
+                    </div>
+                    <div className="stat-meter-tooltip" role="tooltip">
+                      <div className="stat-meter-tooltip-row">
+                        <span
+                          className="stat-meter-tooltip-swatch"
+                          style={{ background: DISK_POSTGRES_COLOR }}
+                          aria-hidden="true"
+                        />
+                        <span>
+                          <strong>Current used (solid):</strong>{' '}
+                          {formatGiB(latest.postgresUsedGiB)} of{' '}
+                          {formatIntGiB(latest.postgresCapacityGiB)} (
+                          {latest.postgresUsedPct.toFixed(1)}%) —{' '}
+                          {formatGiB(latest.postgresAvailableGiB)} free
+                        </span>
+                      </div>
+                      <div className="stat-meter-tooltip-row">
+                        <span
+                          className="stat-meter-tooltip-swatch"
+                          style={{
+                            background: 'rgba(162, 155, 254, 0.28)',
+                            border: '1px solid rgba(162, 155, 254, 0.7)'
+                          }}
+                          aria-hidden="true"
+                        />
+                        <span>
+                          <strong>Peak used (shaded):</strong>{' '}
+                          {formatGiB(summary.peakPostgresUsedGiB)} of{' '}
+                          {formatIntGiB(latest.postgresCapacityGiB)} (
+                          {summary.peakPostgresUsedPct.toFixed(1)}% at{' '}
+                          {formatShortTime(summary.peakPostgresTimestamp)}) — lowest free:{' '}
+                          {formatGiB(summary.minPostgresAvailableGiB)}
+                        </span>
+                      </div>
+                      <div className="stat-meter-tooltip-row">
+                        <span>
+                          <strong>Mount (/mnt/postgres_storage):</strong> Galaxy &amp; Rainstone
+                          PostgreSQL databases
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="stat-secondary">
+                    <span>
+                      Free: <strong>{formatCompactGiB(latest.postgresAvailableGiB)}</strong>
+                    </span>
+                    <span>
+                      Peak: <strong>{summary.peakPostgresUsedPct.toFixed(1)}%</strong>
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="stat-card">
+                  <div className="stat-card-header">
+                    <span className="stat-label">Container Images</span>
+                    <span className="stat-pct">{imageSharePct.toFixed(1)}%</span>
+                  </div>
+                  <div className="stat-value">
+                    {formatIntGiB(latest.imageUsedGiB)} / {formatIntGiB(latest.capacityGiB)}
+                  </div>
+                  <div className="stat-meter-wrapper" tabIndex={0} aria-label={imagesMeterTooltip}>
+                    <div className="stat-meter" role="img" aria-label={imagesMeterTooltip}>
+                      {peakImageSharePct > 0 && (
+                        <div
+                          className="stat-meter-peak-fill"
+                          style={{
+                            width: `${Math.min(100, peakImageSharePct)}%`,
+                            background: 'rgba(124, 58, 237, 0.25)',
+                            borderRightColor: 'rgba(124, 58, 237, 0.65)'
+                          }}
+                        />
+                      )}
+                      <div
+                        className="stat-meter-fill"
+                        style={{
+                          width: `${Math.min(100, imageSharePct)}%`,
+                          background: DISK_IMAGES_COLOR
+                        }}
+                      />
+                    </div>
+                    <div className="stat-meter-tooltip" role="tooltip">
+                      <div className="stat-meter-tooltip-row">
+                        <span
+                          className="stat-meter-tooltip-swatch"
+                          style={{ background: DISK_IMAGES_COLOR }}
+                          aria-hidden="true"
+                        />
+                        <span>
+                          <strong>Current images (solid):</strong>{' '}
+                          {formatIntGiB(latest.imageUsedGiB)} of {formatIntGiB(latest.capacityGiB)}{' '}
+                          ({imageSharePct.toFixed(1)}% of system disk)
+                        </span>
+                      </div>
+                      <div className="stat-meter-tooltip-row">
+                        <span
+                          className="stat-meter-tooltip-swatch"
+                          style={{
+                            background: 'rgba(124, 58, 237, 0.28)',
+                            border: '1px solid rgba(124, 58, 237, 0.65)'
+                          }}
+                          aria-hidden="true"
+                        />
+                        <span>
+                          <strong>Peak images (shaded):</strong>{' '}
+                          {formatIntGiB(summary.peakImageGiB)} of{' '}
+                          {formatIntGiB(latest.capacityGiB)} ({peakImageSharePct.toFixed(1)}% of
+                          system disk)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="stat-secondary">
+                    <span>
+                      Peak images: <strong>{formatIntGiB(summary.peakImageGiB)}</strong> (
+                      {peakImageSharePct.toFixed(1)}%)
+                    </span>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Single-Disk Mode Card 1: Current Disk */}
+              <div className="stat-card">
+                <div className="stat-card-header">
+                  <span className="stat-label">Current Disk</span>
+                  <span className="stat-pct">{latest.usedPct.toFixed(1)}%</span>
+                </div>
+                <div className="stat-value">
+                  {formatIntGiB(latest.usedGiB)} / {formatIntGiB(latest.capacityGiB)}
+                </div>
+                <div
+                  className="stat-meter-wrapper"
+                  tabIndex={0}
+                  aria-label={currentDiskMeterTooltip}
+                >
+                  <div className="stat-meter" role="img" aria-label={currentDiskMeterTooltip}>
+                    <div
+                      className="stat-meter-fill"
+                      style={{
+                        width: `${Math.min(100, latest.usedPct)}%`,
+                        background: DISK_DATA_COLOR
+                      }}
+                    />
+                    <div
+                      className="stat-meter-marker"
+                      style={{ left: 'calc(85% - 1.5px)', background: DISK_GC_LINE_COLOR }}
+                    />
+                    <div
+                      className="stat-meter-marker"
+                      style={{ left: 'calc(90% - 1.5px)' }}
+                    />
+                  </div>
+                  <div className="stat-meter-tooltip" role="tooltip">
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-swatch"
+                        style={{ background: DISK_DATA_COLOR }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>Current used:</strong> {formatIntGiB(latest.usedGiB)} of{' '}
+                        {formatIntGiB(latest.capacityGiB)} ({latest.usedPct.toFixed(1)}%) —{' '}
+                        {formatIntGiB(latest.availableGiB)} free
+                      </span>
+                    </div>
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-mark"
+                        style={{ background: DISK_GC_LINE_COLOR }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>85% mark ({formatIntGiB(latest.gcThresholdGiB)}):</strong>{' '}
+                        Auto-cleanup threshold for unused container images
+                      </span>
+                    </div>
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-mark"
+                        style={{ background: REQUEST_LINE_COLOR }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>90% mark ({formatIntGiB(latest.evictionThresholdGiB)}):</strong>{' '}
+                        Disk pressure threshold where running jobs may be stopped
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="stat-secondary">
+                  <span>
+                    Free: <strong>{formatIntGiB(latest.availableGiB)}</strong>
+                  </span>
+                  {latest.usedPct >= 90 ? (
+                    latestEpisode ? (
+                      <button
+                        type="button"
+                        className="btn-warning-link"
+                        data-resolved="false"
+                        data-active={!isBannerDismissed ? 'true' : 'false'}
+                        aria-expanded={!isBannerDismissed}
+                        title={warningToggleTitle}
+                        onClick={toggleWarningBanner}
+                      >
+                        <span>Over 90% limit</span>
+                        <ChevronDown
+                          size={13}
+                          className="btn-warning-chevron"
+                          aria-hidden="true"
+                        />
+                      </button>
+                    ) : (
+                      <span className="text-overdraw">Over 90% limit</span>
+                    )
+                  ) : latest.usedPct >= 85 ? (
+                    <span style={{ color: DISK_GC_LINE_COLOR, fontWeight: 700 }}>
+                      Over 85% auto-cleanup
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Single-Disk Mode Card 2: Peak Disk */}
+              <div className="stat-card">
+                <div className="stat-card-header">
+                  <span className="stat-label">Peak Disk</span>
+                  <span className="stat-pct">
+                    {summary.peakUsedPct.toFixed(1)}%{' '}
+                    <span className="stat-pct-sub">
+                      at {formatShortTime(summary.peakTimestamp)}
+                    </span>
                   </span>
                 </div>
-                <div className="stat-meter-tooltip-row">
-                  <span
-                    className="stat-meter-tooltip-swatch"
-                    style={{
-                      background: 'rgba(124, 58, 237, 0.28)',
-                      border: '1px solid rgba(124, 58, 237, 0.65)'
-                    }}
-                    aria-hidden="true"
-                  />
+                <div className="stat-value">
+                  {formatIntGiB(summary.peakUsedGiB)} / {formatIntGiB(latest.capacityGiB)}
+                </div>
+                <div
+                  className="stat-meter-wrapper"
+                  tabIndex={0}
+                  aria-label={peakDiskMeterTooltip}
+                >
+                  <div className="stat-meter" role="img" aria-label={peakDiskMeterTooltip}>
+                    <div
+                      className="stat-meter-fill"
+                      style={{
+                        width: `${Math.min(100, summary.peakUsedPct)}%`,
+                        background: DISK_AVAILABLE_COLOR
+                      }}
+                    />
+                    <div
+                      className="stat-meter-marker"
+                      style={{ left: 'calc(85% - 1.5px)', background: DISK_GC_LINE_COLOR }}
+                    />
+                    <div
+                      className="stat-meter-marker"
+                      style={{ left: 'calc(90% - 1.5px)' }}
+                    />
+                  </div>
+                  <div className="stat-meter-tooltip" role="tooltip">
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-swatch"
+                        style={{ background: DISK_AVAILABLE_COLOR }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>Peak used:</strong> {formatIntGiB(summary.peakUsedGiB)} of{' '}
+                        {formatIntGiB(latest.capacityGiB)} ({summary.peakUsedPct.toFixed(1)}% at{' '}
+                        {formatShortTime(summary.peakTimestamp)}) — lowest free:{' '}
+                        {formatIntGiB(summary.minAvailableGiB)}
+                      </span>
+                    </div>
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-mark"
+                        style={{ background: DISK_GC_LINE_COLOR }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>85% mark ({formatIntGiB(latest.gcThresholdGiB)}):</strong>{' '}
+                        Auto-cleanup threshold for unused container images
+                      </span>
+                    </div>
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-mark"
+                        style={{ background: REQUEST_LINE_COLOR }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>90% mark ({formatIntGiB(latest.evictionThresholdGiB)}):</strong>{' '}
+                        Disk pressure threshold where running jobs may be stopped
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="stat-secondary">
                   <span>
-                    <strong>Peak images (shaded):</strong>{' '}
-                    {formatIntGiB(summary.peakImageGiB)} of {formatIntGiB(latest.capacityGiB)} (
-                    {peakImageSharePct.toFixed(1)}% of disk)
+                    Lowest free: <strong>{formatIntGiB(summary.minAvailableGiB)}</strong>
+                  </span>
+                  {pressureEpisodes.length > 0 && latestEpisode ? (
+                    <button
+                      type="button"
+                      className="btn-warning-link"
+                      data-resolved={!latest.diskPressure ? 'true' : 'false'}
+                      data-active={!isBannerDismissed ? 'true' : 'false'}
+                      aria-expanded={!isBannerDismissed}
+                      title={warningToggleTitle}
+                      onClick={toggleWarningBanner}
+                    >
+                      <span>
+                        {pressureEpisodes.length}{' '}
+                        {pressureEpisodes.length === 1 ? 'episode' : 'episodes'}
+                      </span>
+                      <ChevronDown
+                        size={13}
+                        className="btn-warning-chevron"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  ) : summary.peakUsedPct >= 90 ? (
+                    <span className="text-overdraw">&gt;90% limit</span>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Single-Disk Mode Card 3: Container Images */}
+              <div className="stat-card">
+                <div className="stat-card-header">
+                  <span className="stat-label">Container Images</span>
+                  <span className="stat-pct">{imageSharePct.toFixed(1)}%</span>
+                </div>
+                <div className="stat-value">
+                  {formatIntGiB(latest.imageUsedGiB)} / {formatIntGiB(latest.capacityGiB)}
+                </div>
+                <div className="stat-meter-wrapper" tabIndex={0} aria-label={imagesMeterTooltip}>
+                  <div className="stat-meter" role="img" aria-label={imagesMeterTooltip}>
+                    {peakImageSharePct > 0 && (
+                      <div
+                        className="stat-meter-peak-fill"
+                        style={{
+                          width: `${Math.min(100, peakImageSharePct)}%`,
+                          background: 'rgba(124, 58, 237, 0.25)',
+                          borderRightColor: 'rgba(124, 58, 237, 0.65)'
+                        }}
+                      />
+                    )}
+                    <div
+                      className="stat-meter-fill"
+                      style={{
+                        width: `${Math.min(100, imageSharePct)}%`,
+                        background: DISK_IMAGES_COLOR
+                      }}
+                    />
+                  </div>
+                  <div className="stat-meter-tooltip" role="tooltip">
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-swatch"
+                        style={{ background: DISK_IMAGES_COLOR }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>Current images (solid):</strong>{' '}
+                        {formatIntGiB(latest.imageUsedGiB)} of {formatIntGiB(latest.capacityGiB)} (
+                        {imageSharePct.toFixed(1)}% of disk)
+                      </span>
+                    </div>
+                    <div className="stat-meter-tooltip-row">
+                      <span
+                        className="stat-meter-tooltip-swatch"
+                        style={{
+                          background: 'rgba(124, 58, 237, 0.28)',
+                          border: '1px solid rgba(124, 58, 237, 0.65)'
+                        }}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        <strong>Peak images (shaded):</strong>{' '}
+                        {formatIntGiB(summary.peakImageGiB)} of {formatIntGiB(latest.capacityGiB)}{' '}
+                        ({peakImageSharePct.toFixed(1)}% of disk)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="stat-secondary">
+                  <span>
+                    Peak images: <strong>{formatIntGiB(summary.peakImageGiB)}</strong> (
+                    {peakImageSharePct.toFixed(1)}%)
                   </span>
                 </div>
               </div>
-            </div>
-            <div className="stat-secondary">
-              <span>
-                Peak images: <strong>{formatIntGiB(summary.peakImageGiB)}</strong> (
-                {peakImageSharePct.toFixed(1)}%)
-              </span>
-            </div>
-          </div>
+            </>
+          )}
 
           {/* Card 4: Disk I/O Wait */}
           <div className="stat-card">
@@ -1161,12 +1855,214 @@ export default function StorageDashboard({
         )}
       </section>
 
-      {/* Chart 1: Storage Consumed & Available Over Time */}
-      <section className="panel" aria-label="Storage Consumed & Available Over Time">
+      {/* Chart Panel 1 (Multi-Disk): Galaxy Data Disk */}
+      {summary.hasDedicatedGalaxyDisk && (
+        <section
+          className="panel"
+          aria-label="Galaxy Data Disk — Storage Consumed & Available Over Time"
+        >
+          <div className="panel-header" data-collapsed={galaxyCollapsed ? 'true' : 'false'}>
+            <div className="panel-title-group">
+              <h3 className="panel-title">
+                Galaxy Data Disk — Storage Consumed &amp; Available Over Time
+              </h3>
+              <span className="panel-subtitle">
+                /mnt/block_storage ({formatIntGiB(latest.galaxyPvcCapacityGiB)}) · Drag across chart
+                to zoom
+              </span>
+            </div>
+
+            <div className="panel-header-actions" data-no-print>
+              {zoomRange && zoomWindowLabel && (
+                <>
+                  <span className="badge-scope" title="Active zoom window">
+                    Zoom: {zoomWindowLabel}
+                  </span>
+                  <button type="button" className="btn-compact" onClick={resetZoom}>
+                    Reset zoom
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                className="btn-compact"
+                aria-expanded={!galaxyCollapsed}
+                aria-controls={galaxyBodyId}
+                onClick={() => setGalaxyCollapsed(prev => !prev)}
+              >
+                {galaxyCollapsed ? 'Expand' : 'Collapse'}
+              </button>
+            </div>
+          </div>
+
+          {!galaxyCollapsed && (
+            <div id={galaxyBodyId}>
+              <div className="panel-body">
+                <p className="panel-description">
+                  Shows disk space used on the primary Galaxy data disk (user datasets, histories,
+                  job working directories, tusd uploads, and CVMFS cache) alongside remaining free
+                  space.
+                </p>
+
+                <div className="chart-key" style={{ marginBottom: '0.65rem' }}>
+                  <span className="chart-key-item">
+                    <span
+                      className="color-swatch"
+                      style={{ background: DISK_DATA_COLOR }}
+                      aria-hidden="true"
+                    />
+                    <span>Galaxy Data Used (GiB)</span>
+                  </span>
+                  <span className="chart-key-item">
+                    <span
+                      className="key-line-dashed"
+                      style={{ borderTopColor: DISK_AVAILABLE_COLOR }}
+                      aria-hidden="true"
+                    />
+                    <span>Available Free Space (GiB)</span>
+                  </span>
+                </div>
+
+                <div style={{ height: 300, position: 'relative' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={displayedPoints}
+                      margin={{ top: 10, right: 20, left: 8, bottom: 8 }}
+                      onMouseDown={handleChartMouseDown}
+                      onMouseMove={handleChartMouseMove}
+                      onMouseUp={handleChartMouseUp}
+                    >
+                      <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="relativeTime"
+                        ticks={xAxisTicks}
+                        interval={0}
+                        minTickGap={36}
+                        stroke={CHART_AXIS_COLOR}
+                        tick={{ fill: CHART_AXIS_COLOR, fontSize: 13 }}
+                      />
+                      <YAxis
+                        domain={[0, Math.ceil(latest.galaxyPvcCapacityGiB)]}
+                        stroke={CHART_AXIS_COLOR}
+                        tick={{ fill: CHART_AXIS_COLOR, fontSize: 13 }}
+                        tickFormatter={(val: number) => `${val} GiB`}
+                      />
+                      <Tooltip
+                        content={<GalaxyDiskTooltip />}
+                        offset={24}
+                        wrapperStyle={{ zIndex: 30, pointerEvents: 'none' }}
+                      />
+
+                      {dragStartSampleIndex !== null && dragEndSampleIndex !== null && (
+                        <ReferenceArea
+                          x1={
+                            getRelativeTimeBySampleIndex(
+                              Math.min(dragStartSampleIndex, dragEndSampleIndex)
+                            ) ?? undefined
+                          }
+                          x2={
+                            getRelativeTimeBySampleIndex(
+                              Math.max(dragStartSampleIndex, dragEndSampleIndex)
+                            ) ?? undefined
+                          }
+                          fill={CHART_SELECTION_FILL}
+                          fillOpacity={0.18}
+                        />
+                      )}
+
+                      <Area
+                        type="monotone"
+                        dataKey="galaxyPvcUsedGiB"
+                        name="Galaxy Data Used (GiB)"
+                        stroke={DISK_DATA_COLOR}
+                        strokeWidth={1.75}
+                        fill={DISK_DATA_COLOR}
+                        fillOpacity={0.62}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="galaxyPvcAvailableGiB"
+                        name="Available Free Space (GiB)"
+                        stroke={DISK_AVAILABLE_COLOR}
+                        strokeWidth={2}
+                        strokeDasharray="5 3"
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <details className="inline-details" data-no-print>
+                <summary>Tabular summary (Galaxy Data Disk)</summary>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Storage Category</th>
+                        <th scope="col" className="num">Latest</th>
+                        <th scope="col" className="num">Peak</th>
+                        <th scope="col" className="num">Share of Capacity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <strong>Galaxy Data Used</strong>
+                        </td>
+                        <td className="num">{formatGiB(latest.galaxyPvcUsedGiB)}</td>
+                        <td className="num">{formatGiB(summary.peakGalaxyUsedGiB)}</td>
+                        <td className="num">{latest.galaxyPvcUsedPct.toFixed(1)}%</td>
+                      </tr>
+                      <tr>
+                        <td>Available Free Space</td>
+                        <td className="num">{formatGiB(latest.galaxyPvcAvailableGiB)}</td>
+                        <td className="num">
+                          {formatGiB(
+                            displayedPoints.reduce(
+                              (max, pt) => Math.max(max, pt.galaxyPvcAvailableGiB),
+                              0
+                            )
+                          )}
+                        </td>
+                        <td className="num">
+                          {latest.galaxyPvcCapacityGiB > 0
+                            ? `${((latest.galaxyPvcAvailableGiB / latest.galaxyPvcCapacityGiB) * 100).toFixed(1)}%`
+                            : '-'}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Chart Panel 2: System & Container Images Disk (or Single-Disk Storage Consumed) */}
+      <section
+        className="panel"
+        aria-label={
+          isMultiDisk
+            ? 'System & Container Images Disk — Storage Consumed & Available Over Time'
+            : 'Storage Consumed & Available Over Time'
+        }
+      >
         <div className="panel-header" data-collapsed={usageCollapsed ? 'true' : 'false'}>
           <div className="panel-title-group">
-            <h3 className="panel-title">Storage Consumed &amp; Available Over Time</h3>
-            <span className="panel-subtitle">Drag across chart to zoom</span>
+            <h3 className="panel-title">
+              {isMultiDisk
+                ? 'System & Container Images Disk — Storage Consumed & Available Over Time'
+                : 'Storage Consumed & Available Over Time'}
+            </h3>
+            <span className="panel-subtitle">
+              {isMultiDisk
+                ? `/ (${formatIntGiB(latest.capacityGiB)}) · Drag across chart to zoom`
+                : 'Drag across chart to zoom'}
+            </span>
           </div>
 
           <div className="panel-header-actions" data-no-print>
@@ -1175,15 +2071,7 @@ export default function StorageDashboard({
                 <span className="badge-scope" title="Active zoom window">
                   Zoom: {zoomWindowLabel}
                 </span>
-                <button
-                  type="button"
-                  className="btn-compact"
-                  onClick={() => {
-                    setZoomRange(null);
-                    setDragStartSampleIndex(null);
-                    setDragEndSampleIndex(null);
-                  }}
-                >
+                <button type="button" className="btn-compact" onClick={resetZoom}>
                   Reset zoom
                 </button>
               </>
@@ -1204,8 +2092,18 @@ export default function StorageDashboard({
           <div id={usageBodyId}>
             <div className="panel-body">
               <p className="panel-description">
-                Shows how much disk space is used by Galaxy data, volumes, and system files versus
-                downloaded container images, alongside remaining free space.
+                {isMultiDisk ? (
+                  <>
+                    Shows how much space on the system boot disk is used by the OS, Kubernetes, and
+                    ephemeral volumes versus downloaded container images, alongside remaining free
+                    space.
+                  </>
+                ) : (
+                  <>
+                    Shows how much disk space is used by Galaxy data, volumes, and system files
+                    versus downloaded container images, alongside remaining free space.
+                  </>
+                )}
                 {usageHelpExpanded && (
                   <>
                     {' '}
@@ -1232,7 +2130,11 @@ export default function StorageDashboard({
                     style={{ background: DISK_DATA_COLOR }}
                     aria-hidden="true"
                   />
-                  <span>Data, Volumes &amp; System (GiB)</span>
+                  <span>
+                    {isMultiDisk
+                      ? 'System, Logs & Ephemeral Volumes (GiB)'
+                      : 'Data, Volumes & System (GiB)'}
+                  </span>
                 </span>
                 <span className="chart-key-item">
                   <span
@@ -1271,43 +2173,14 @@ export default function StorageDashboard({
                 </span>
               </div>
 
-              <div style={{ height: 340, position: 'relative' }}>
+              <div style={{ height: isMultiDisk ? 300 : 340, position: 'relative' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
                     data={displayedPoints}
                     margin={{ top: 10, right: 20, left: 8, bottom: 8 }}
-                    onMouseDown={(state: {
-                      activePayload?: Array<{ payload?: StoragePoint }>;
-                    }) => {
-                      const sampleIndex = getSampleIndexFromState(state);
-                      if (sampleIndex === null) return;
-                      setDragStartSampleIndex(sampleIndex);
-                      setDragEndSampleIndex(sampleIndex);
-                    }}
-                    onMouseMove={(state: {
-                      activePayload?: Array<{ payload?: StoragePoint }>;
-                    }) => {
-                      if (dragStartSampleIndex === null) return;
-                      const sampleIndex = getSampleIndexFromState(state);
-                      if (sampleIndex === null) return;
-                      setDragEndSampleIndex(sampleIndex);
-                    }}
-                    onMouseUp={(state: {
-                      activePayload?: Array<{ payload?: StoragePoint }>;
-                    }) => {
-                      if (dragStartSampleIndex === null) return;
-                      const fallback = getSampleIndexFromState(state);
-                      const end = dragEndSampleIndex ?? fallback;
-                      if (end !== null && end !== dragStartSampleIndex) {
-                        setZoomRange({
-                          startSampleIndex: Math.min(dragStartSampleIndex, end),
-                          endSampleIndex: Math.max(dragStartSampleIndex, end)
-                        });
-                        suppressNextClickRef.current = true;
-                      }
-                      setDragStartSampleIndex(null);
-                      setDragEndSampleIndex(null);
-                    }}
+                    onMouseDown={handleChartMouseDown}
+                    onMouseMove={handleChartMouseMove}
+                    onMouseUp={handleChartMouseUp}
                   >
                     <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
                     <XAxis
@@ -1325,7 +2198,7 @@ export default function StorageDashboard({
                       tickFormatter={(val: number) => `${val} GiB`}
                     />
                     <Tooltip
-                      content={<StorageUsageTooltip />}
+                      content={<StorageUsageTooltip isDedicatedSystemDisk={isMultiDisk} />}
                       offset={24}
                       wrapperStyle={{ zIndex: 30, pointerEvents: 'none' }}
                     />
@@ -1374,7 +2247,11 @@ export default function StorageDashboard({
                       type="monotone"
                       dataKey="dataAndSystemGiB"
                       stackId="used"
-                      name="Data, Volumes & System (GiB)"
+                      name={
+                        isMultiDisk
+                          ? 'System, Logs & Ephemeral Volumes (GiB)'
+                          : 'Data, Volumes & System (GiB)'
+                      }
                       stroke={DISK_DATA_COLOR}
                       strokeWidth={1.5}
                       fill={DISK_DATA_COLOR}
@@ -1408,7 +2285,13 @@ export default function StorageDashboard({
             </div>
 
             <details className="inline-details" data-no-print>
-              <summary>Tabular summary (Storage Consumed &amp; Available)</summary>
+              <summary>
+                Tabular summary (
+                {isMultiDisk
+                  ? 'System & Container Images Disk'
+                  : 'Storage Consumed & Available'}
+                )
+              </summary>
               <div className="table-wrap">
                 <table className="data-table">
                   <thead>
@@ -1429,7 +2312,11 @@ export default function StorageDashboard({
                       <td className="num">{latest.usedPct.toFixed(1)}%</td>
                     </tr>
                     <tr>
-                      <td>Data, Volumes &amp; System</td>
+                      <td>
+                        {isMultiDisk
+                          ? 'System, Logs & Ephemeral Volumes'
+                          : 'Data, Volumes & System'}
+                      </td>
                       <td className="num">{formatGiB(latest.dataAndSystemGiB)}</td>
                       <td className="num">
                         {formatGiB(
@@ -1473,7 +2360,193 @@ export default function StorageDashboard({
         )}
       </section>
 
-      {/* Chart 2: Disk Pressure & I/O Wait Over Time */}
+      {/* Chart Panel 3 (Multi-Disk): Postgres Database Disk */}
+      {summary.hasPostgresDisk && (
+        <section
+          className="panel"
+          aria-label="Postgres Database Disk — Storage Consumed & Available Over Time"
+        >
+          <div className="panel-header" data-collapsed={postgresCollapsed ? 'true' : 'false'}>
+            <div className="panel-title-group">
+              <h3 className="panel-title">
+                Postgres Database Disk — Storage Consumed &amp; Available Over Time
+              </h3>
+              <span className="panel-subtitle">
+                /mnt/postgres_storage ({formatIntGiB(latest.postgresCapacityGiB)}) · Drag across
+                chart to zoom
+              </span>
+            </div>
+
+            <div className="panel-header-actions" data-no-print>
+              {zoomRange && zoomWindowLabel && (
+                <>
+                  <span className="badge-scope" title="Active zoom window">
+                    Zoom: {zoomWindowLabel}
+                  </span>
+                  <button type="button" className="btn-compact" onClick={resetZoom}>
+                    Reset zoom
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                className="btn-compact"
+                aria-expanded={!postgresCollapsed}
+                aria-controls={postgresBodyId}
+                onClick={() => setPostgresCollapsed(prev => !prev)}
+              >
+                {postgresCollapsed ? 'Expand' : 'Collapse'}
+              </button>
+            </div>
+          </div>
+
+          {!postgresCollapsed && (
+            <div id={postgresBodyId}>
+              <div className="panel-body">
+                <p className="panel-description">
+                  Shows disk space used on the dedicated PostgreSQL database disk (Galaxy and
+                  Rainstone relational databases) alongside remaining free space.
+                </p>
+
+                <div className="chart-key" style={{ marginBottom: '0.65rem' }}>
+                  <span className="chart-key-item">
+                    <span
+                      className="color-swatch"
+                      style={{ background: DISK_POSTGRES_COLOR }}
+                      aria-hidden="true"
+                    />
+                    <span>Postgres Database Used (GiB)</span>
+                  </span>
+                  <span className="chart-key-item">
+                    <span
+                      className="key-line-dashed"
+                      style={{ borderTopColor: DISK_AVAILABLE_COLOR }}
+                      aria-hidden="true"
+                    />
+                    <span>Available Free Space (GiB)</span>
+                  </span>
+                </div>
+
+                <div style={{ height: 260, position: 'relative' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={displayedPoints}
+                      margin={{ top: 10, right: 20, left: 8, bottom: 8 }}
+                      onMouseDown={handleChartMouseDown}
+                      onMouseMove={handleChartMouseMove}
+                      onMouseUp={handleChartMouseUp}
+                    >
+                      <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="relativeTime"
+                        ticks={xAxisTicks}
+                        interval={0}
+                        minTickGap={36}
+                        stroke={CHART_AXIS_COLOR}
+                        tick={{ fill: CHART_AXIS_COLOR, fontSize: 13 }}
+                      />
+                      <YAxis
+                        domain={[0, Math.ceil(latest.postgresCapacityGiB)]}
+                        stroke={CHART_AXIS_COLOR}
+                        tick={{ fill: CHART_AXIS_COLOR, fontSize: 13 }}
+                        tickFormatter={(val: number) => `${val} GiB`}
+                      />
+                      <Tooltip
+                        content={<PostgresDiskTooltip />}
+                        offset={24}
+                        wrapperStyle={{ zIndex: 30, pointerEvents: 'none' }}
+                      />
+
+                      {dragStartSampleIndex !== null && dragEndSampleIndex !== null && (
+                        <ReferenceArea
+                          x1={
+                            getRelativeTimeBySampleIndex(
+                              Math.min(dragStartSampleIndex, dragEndSampleIndex)
+                            ) ?? undefined
+                          }
+                          x2={
+                            getRelativeTimeBySampleIndex(
+                              Math.max(dragStartSampleIndex, dragEndSampleIndex)
+                            ) ?? undefined
+                          }
+                          fill={CHART_SELECTION_FILL}
+                          fillOpacity={0.18}
+                        />
+                      )}
+
+                      <Area
+                        type="monotone"
+                        dataKey="postgresUsedGiB"
+                        name="Postgres Database Used (GiB)"
+                        stroke={DISK_POSTGRES_COLOR}
+                        strokeWidth={1.75}
+                        fill={DISK_POSTGRES_COLOR}
+                        fillOpacity={0.62}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="postgresAvailableGiB"
+                        name="Available Free Space (GiB)"
+                        stroke={DISK_AVAILABLE_COLOR}
+                        strokeWidth={2}
+                        strokeDasharray="5 3"
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <details className="inline-details" data-no-print>
+                <summary>Tabular summary (Postgres Database Disk)</summary>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Storage Category</th>
+                        <th scope="col" className="num">Latest</th>
+                        <th scope="col" className="num">Peak</th>
+                        <th scope="col" className="num">Share of Capacity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <strong>Postgres Database Used</strong>
+                        </td>
+                        <td className="num">{formatGiB(latest.postgresUsedGiB)}</td>
+                        <td className="num">{formatGiB(summary.peakPostgresUsedGiB)}</td>
+                        <td className="num">{latest.postgresUsedPct.toFixed(1)}%</td>
+                      </tr>
+                      <tr>
+                        <td>Available Free Space</td>
+                        <td className="num">{formatGiB(latest.postgresAvailableGiB)}</td>
+                        <td className="num">
+                          {formatGiB(
+                            displayedPoints.reduce(
+                              (max, pt) => Math.max(max, pt.postgresAvailableGiB),
+                              0
+                            )
+                          )}
+                        </td>
+                        <td className="num">
+                          {latest.postgresCapacityGiB > 0
+                            ? `${((latest.postgresAvailableGiB / latest.postgresCapacityGiB) * 100).toFixed(1)}%`
+                            : '-'}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Chart Panel 4: Disk Pressure & I/O Wait Over Time */}
       <section className="panel" aria-label="Disk Pressure & I/O Wait Over Time">
         <div className="panel-header" data-collapsed={pressureCollapsed ? 'true' : 'false'}>
           <div className="panel-title-group">
@@ -1487,15 +2560,7 @@ export default function StorageDashboard({
                 <span className="badge-scope" title="Active zoom window">
                   Zoom: {zoomWindowLabel}
                 </span>
-                <button
-                  type="button"
-                  className="btn-compact"
-                  onClick={() => {
-                    setZoomRange(null);
-                    setDragStartSampleIndex(null);
-                    setDragEndSampleIndex(null);
-                  }}
-                >
+                <button type="button" className="btn-compact" onClick={resetZoom}>
                   Reset zoom
                 </button>
               </>
@@ -1581,38 +2646,9 @@ export default function StorageDashboard({
                 <AreaChart
                   data={displayedPoints}
                   margin={{ top: 10, right: 20, left: 8, bottom: 8 }}
-                  onMouseDown={(state: {
-                    activePayload?: Array<{ payload?: StoragePoint }>;
-                  }) => {
-                    const sampleIndex = getSampleIndexFromState(state);
-                    if (sampleIndex === null) return;
-                    setDragStartSampleIndex(sampleIndex);
-                    setDragEndSampleIndex(sampleIndex);
-                  }}
-                  onMouseMove={(state: {
-                    activePayload?: Array<{ payload?: StoragePoint }>;
-                  }) => {
-                    if (dragStartSampleIndex === null) return;
-                    const sampleIndex = getSampleIndexFromState(state);
-                    if (sampleIndex === null) return;
-                    setDragEndSampleIndex(sampleIndex);
-                  }}
-                  onMouseUp={(state: {
-                    activePayload?: Array<{ payload?: StoragePoint }>;
-                  }) => {
-                    if (dragStartSampleIndex === null) return;
-                    const fallback = getSampleIndexFromState(state);
-                    const end = dragEndSampleIndex ?? fallback;
-                    if (end !== null && end !== dragStartSampleIndex) {
-                      setZoomRange({
-                        startSampleIndex: Math.min(dragStartSampleIndex, end),
-                        endSampleIndex: Math.max(dragStartSampleIndex, end)
-                      });
-                      suppressNextClickRef.current = true;
-                    }
-                    setDragStartSampleIndex(null);
-                    setDragEndSampleIndex(null);
-                  }}
+                  onMouseDown={handleChartMouseDown}
+                  onMouseMove={handleChartMouseMove}
+                  onMouseUp={handleChartMouseUp}
                 >
                   <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
                   <XAxis
