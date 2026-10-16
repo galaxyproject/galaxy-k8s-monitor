@@ -29,6 +29,13 @@ export const MEMORY_CURRENT_COLOR = '#7BA7CC';
 export const MEMORY_PEAK_COLOR = '#A29BFE';
 export const MEMORY_RADAR_COLOR = '#7BA7CC';
 
+export const DISK_DATA_COLOR = '#5AA9A4';
+export const DISK_IMAGES_COLOR = '#7BA7CC';
+export const DISK_AVAILABLE_COLOR = '#25537b';
+export const DISK_PSI_SOME_COLOR = '#E6B86A';
+export const DISK_PSI_FULL_COLOR = '#A29BFE';
+export const DISK_GC_LINE_COLOR = '#b45309';
+
 export const REQUEST_LINE_COLOR = '#2c3143';
 export const ACTIVE_SAMPLE_LINE_COLOR = '#2c3143';
 export const CHART_GRID_COLOR = '#dce5ed';

@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Sample } from '../lib/types';
 import { bytesToMiB } from '../lib/units';
 import {
@@ -25,6 +26,7 @@ type Props = {
   groupColorMap?: GroupColorMap;
   resetZoomSignal?: number;
   onSelectAllGroups?: () => void;
+  toolbarPortalEl?: HTMLElement | null;
   printMetadata?: PrintMetadata;
 };
 
@@ -44,6 +46,7 @@ export default function Dashboard({
   groupColorMap,
   resetZoomSignal = 0,
   onSelectAllGroups,
+  toolbarPortalEl,
   printMetadata
 }: Props) {
   const groups = useMemo(
@@ -362,53 +365,41 @@ export default function Dashboard({
         </div>
       </div>
 
-      {(zoomRange !== null || isPinned) && (
-        <div
-          className="interaction-bar"
-          data-no-print
-          role="status"
-          aria-live="polite"
-        >
-          <div className="interaction-bar-items">
+      {toolbarPortalEl &&
+        (zoomRange !== null || isPinned) &&
+        createPortal(
+          <>
             {zoomRange && zoomWindowLabel && (
-              <span className="interaction-pill">
-                Zoom window: {zoomWindowLabel}
-              </span>
-            )}
-            {isPinned && (
-              <span className="interaction-pill">
-                <span className="badge-pinned">Pinned</span>
-                <span>
-                  Sample at {graphModel.selectedRadarRelativeTime}
-                  {graphModel.selectedRadarTimestamp
-                    ? ` (${new Date(graphModel.selectedRadarTimestamp).toLocaleTimeString()})`
-                    : ''}
+              <>
+                <span className="badge-scope" title="Active zoom window">
+                  Zoom: {zoomWindowLabel}
                 </span>
-              </span>
-            )}
-          </div>
-          <div className="interaction-bar-actions">
-            {zoomRange && (
-              <button
-                type="button"
-                className="btn-compact"
-                onClick={() => setZoomRange(null)}
-              >
-                Reset zoom
-              </button>
+                <button
+                  type="button"
+                  className="btn-compact"
+                  onClick={() => setZoomRange(null)}
+                >
+                  Reset zoom
+                </button>
+              </>
             )}
             {isPinned && (
-              <button
-                type="button"
-                className="btn-compact"
-                onClick={() => setPinnedTimestamp(null)}
-              >
-                Unpin / Reset to latest
-              </button>
+              <>
+                <span className="badge-pinned">
+                  Pinned: {graphModel.selectedRadarRelativeTime}
+                </span>
+                <button
+                  type="button"
+                  className="btn-compact"
+                  onClick={() => setPinnedTimestamp(null)}
+                >
+                  Unpin
+                </button>
+              </>
             )}
-          </div>
-        </div>
-      )}
+          </>,
+          toolbarPortalEl
+        )}
 
       {selectedGroups.size === 0 && totalGroups > 0 && (
         <div className="status-banner" data-variant="info" data-no-print role="status">

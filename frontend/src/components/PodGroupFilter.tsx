@@ -15,6 +15,7 @@ type Props = {
   selectedGroups: Set<string>;
   selectedTimeframe: Timeframe;
   groupColorMap?: GroupColorMap;
+  activeTab?: 'compute' | 'storage';
   onToggleGroup: (name: string) => void;
   onSelectOnly: (name: string) => void;
   onSelectAll: () => void;
@@ -35,6 +36,7 @@ export default function PodGroupFilter({
   selectedGroups,
   selectedTimeframe,
   groupColorMap,
+  activeTab = 'compute',
   onToggleGroup,
   onSelectOnly,
   onSelectAll,
@@ -94,16 +96,27 @@ export default function PodGroupFilter({
         </div>
       </div>
 
-      <div className="control-group">
-        <div className="control-group-header">
-          <h2>Pod groups</h2>
-          <span
-            className="count-pill"
-            aria-label={`${selectedGroups.size} of ${podGroups.length} pod groups selected`}
-          >
-            {selectedGroups.size}/{podGroups.length}
-          </span>
+      {activeTab === 'storage' ? (
+        <div className="control-group">
+          <div className="control-group-header">
+            <h2>Scope</h2>
+          </div>
+          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--monitor-grey)' }}>
+            Storage and disk pressure telemetry are collected at the node/filesystem level. Switch
+            to the <strong>Compute</strong> tab to filter CPU &amp; Memory by pod group.
+          </p>
         </div>
+      ) : (
+        <div className="control-group">
+          <div className="control-group-header">
+            <h2>Pod groups</h2>
+            <span
+              className="count-pill"
+              aria-label={`${selectedGroups.size} of ${podGroups.length} pod groups selected`}
+            >
+              {selectedGroups.size}/{podGroups.length}
+            </span>
+          </div>
 
         <div className="chip-row" role="group" aria-label="Pod group presets">
           <button
@@ -225,7 +238,8 @@ export default function PodGroupFilter({
             })}
           </div>
         )}
-      </div>
+        </div>
+      )}
     </aside>
   );
 }

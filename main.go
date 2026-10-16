@@ -18,8 +18,10 @@ import (
 	"galaxy-k8s-monitor/cmd/server"
 	"galaxy-k8s-monitor/internal/api"
 	"galaxy-k8s-monitor/internal/collector"
+	"galaxy-k8s-monitor/internal/model"
 	"galaxy-k8s-monitor/internal/store"
 
+	"encoding/json"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -43,6 +45,24 @@ func normalizeBasePath(input string) string {
 	return clean
 }
 
+func loadSeedSamples(path string) ([]model.Sample, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var samples []model.Sample
+	if err := json.Unmarshal(raw, &samples); err == nil && len(samples) > 0 {
+		return samples, nil
+	}
+	var wrapper struct {
+		Samples []model.Sample `json:"samples"`
+	}
+	if err := json.Unmarshal(raw, &wrapper); err != nil {
+		return nil, err
+	}
+	return wrapper.Samples, nil
+}
+
 func main() {
 	var (
 		namespace      = flag.String("namespace", "galaxy", "Kubernetes namespace to monitor")
@@ -51,23 +71,9 @@ func main() {
 		listenAddress  = flag.String("address", ":8080", "HTTP listen address")
 		kubeconfig     = flag.String("kubeconfig", "", "Path to kubeconfig (optional; falls back to KUBECONFIG env var or in-cluster)")
 		basePath       = flag.String("base-path", "/", "Optional base path prefix, for example /monitor")
+		seedFile       = flag.String("seed-file", "", "Optional JSON file of samples to pre-load into the ring buffer")
 	)
 	flag.Parse()
-
-	config, err := buildKubeConfig(*kubeconfig)
-	if err != nil {
-		log.Fatalf("failed to build kubernetes config: %v", err)
-	}
-
-	coreClient, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		log.Fatalf("failed to create kubernetes client: %v", err)
-	}
-
-	metricsClient, err := metricsclientset.NewForConfig(config)
-	if err != nil {
-		log.Fatalf("failed to create metrics client: %v", err)
-	}
 
 	normalizedBasePath := normalizeBasePath(*basePath)
 	capacity := int((time.Duration(*retentionHours) * time.Hour) / *interval)
@@ -76,6 +82,28 @@ func main() {
 	}
 
 	ring := store.NewRingBuffer(capacity)
+	if *seedFile != "" {
+		seeded, err := loadSeedSamples(*seedFile)
+		if err != nil {
+			log.Fatalf("failed to load seed file %s: %v", *seedFile, err)
+		}
+		for _, sample := range seeded {
+			ring.Append(sample)
+		}
+		log.Printf("loaded %d samples from seed file %s", len(seeded), *seedFile)
+	}
+
+	var coreClient kubernetes.Interface
+	var metricsClient metricsclientset.Interface
+	if config, err := buildKubeConfig(*kubeconfig); err == nil {
+		coreClient, _ = kubernetes.NewForConfig(config)
+		metricsClient, _ = metricsclientset.NewForConfig(config)
+	} else if *seedFile == "" {
+		log.Fatalf("failed to build kubernetes config: %v", err)
+	} else {
+		log.Printf("running in offline seed-only mode (no kubernetes config: %v)", err)
+	}
+
 	broadcaster := api.NewBroadcaster()
 
 	currentPodGroups := func() []string {
@@ -123,21 +151,22 @@ func main() {
 		Handlers:    handlers,
 	})
 
-	collectorInstance := collector.New(
-		coreClient,
-		metricsClient,
-		*namespace,
-		ring,
-		*interval,
-		func(sample api.Sample) {
-			broadcaster.Publish(sample)
-		},
-	)
-
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	go collectorInstance.Run(ctx)
+	if coreClient != nil && metricsClient != nil {
+		collectorInstance := collector.New(
+			coreClient,
+			metricsClient,
+			*namespace,
+			ring,
+			*interval,
+			func(sample api.Sample) {
+				broadcaster.Publish(sample)
+			},
+		)
+		go collectorInstance.Run(ctx)
+	}
 
 	httpServer := &http.Server{
 		Addr:              *listenAddress,

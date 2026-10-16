@@ -3,7 +3,8 @@ import {
   CPU_CURRENT_COLOR,
   CPU_PEAK_COLOR,
   MEMORY_CURRENT_COLOR,
-  MEMORY_PEAK_COLOR
+  MEMORY_PEAK_COLOR,
+  REQUEST_LINE_COLOR
 } from '../lib/colors';
 import { formatAdaptiveMemoryFromMiB, formatGiBFromMiB, formatMillicores } from '../lib/units';
 
@@ -42,6 +43,11 @@ function UtilizationCard({
   const safePercentage = Math.max(0, Math.min(100, percentage));
   const safeMarkerPercentage = Math.max(0, Math.min(100, requestPercentage));
 
+  const meterTooltip = [
+    `${label}: ${value} (${safePercentage.toFixed(1)}% of cluster capacity)`,
+    `• Vertical mark (${safeMarkerPercentage.toFixed(1)}% / ${requestLabel}): Cumulative pod resource request`
+  ].join('\n');
+
   return (
     <div className="stat-card">
       <div className="stat-card-header">
@@ -51,33 +57,53 @@ function UtilizationCard({
 
       <div className="stat-value">{value}</div>
 
-      <div
-        className="stat-meter"
-        role="img"
-        aria-label={`${label}: ${value} (${safePercentage.toFixed(1)}% of cluster capacity). Cumulative request: ${requestLabel} (${safeMarkerPercentage.toFixed(1)}% of cluster capacity).`}
-      >
-        <div
-          className="stat-meter-fill"
-          style={{
-            width: `${safePercentage}%`,
-            background: fillColor
-          }}
-        />
-        <div
-          className="stat-meter-marker"
-          title={`Cumulative request: ${requestLabel} (${safeMarkerPercentage.toFixed(1)}% of cluster capacity)`}
-          style={{
-            left: `calc(${safeMarkerPercentage}% - 1.5px)`
-          }}
-        />
+      <div className="stat-meter-wrapper" tabIndex={0} aria-label={meterTooltip}>
+        <div className="stat-meter" role="img" aria-label={meterTooltip}>
+          <div
+            className="stat-meter-fill"
+            style={{
+              width: `${safePercentage}%`,
+              background: fillColor
+            }}
+          />
+          <div
+            className="stat-meter-marker"
+            style={{
+              left: `calc(${safeMarkerPercentage}% - 1.5px)`
+            }}
+          />
+        </div>
+        <div className="stat-meter-tooltip" role="tooltip">
+          <div className="stat-meter-tooltip-row">
+            <span
+              className="stat-meter-tooltip-swatch"
+              style={{ background: fillColor }}
+              aria-hidden="true"
+            />
+            <span>
+              <strong>{label}:</strong> {value} ({safePercentage.toFixed(1)}% of capacity)
+            </span>
+          </div>
+          <div className="stat-meter-tooltip-row">
+            <span
+              className="stat-meter-tooltip-mark"
+              style={{ background: REQUEST_LINE_COLOR }}
+              aria-hidden="true"
+            />
+            <span>
+              <strong>Request mark ({safeMarkerPercentage.toFixed(1)}%):</strong> {requestLabel}{' '}
+              cumulative pod request
+            </span>
+          </div>
+        </div>
       </div>
 
       <div className="stat-secondary">
         <span>
-          Request: <strong>{requestLabel}</strong> ({safeMarkerPercentage.toFixed(1)}%)
+          Req: <strong>{requestLabel}</strong> ({Math.round(safeMarkerPercentage)}%)
         </span>
         {isOverRequest && (
-          <span className="text-overdraw">Over request</span>
+          <span className="text-overdraw">Exceeded</span>
         )}
       </div>
     </div>

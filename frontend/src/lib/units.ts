@@ -1,10 +1,15 @@
 export const bytesToMiB = (bytes: number): number => bytes / (1024 * 1024);
 
+export const bytesToGiB = (bytes: number): number => bytes / (1024 * 1024 * 1024);
+
 export const miBToGiB = (valueMiB: number): number => valueMiB / 1024;
 
 export const formatMillicores = (value: number): string => `${Math.round(value).toLocaleString()}m`;
 
 export const formatMiB = (value: number): string => `${value.toFixed(1)} MiB`;
+
+export const formatGiB = (valueGiB: number): string =>
+  `${valueGiB.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })} GiB`;
 
 export const formatGiBFromMiB = (valueMiB: number): string =>
   `${miBToGiB(valueMiB).toLocaleString(undefined, { maximumFractionDigits: 2 })} GiB`;

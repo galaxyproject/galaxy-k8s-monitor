@@ -3,8 +3,10 @@ import {
   Activity,
   AlertCircle,
   AlertTriangle,
+  Cpu,
   Download,
   FileText,
+  HardDrive,
   Loader2,
   Printer,
   Radio,
@@ -16,9 +18,10 @@ import {
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import PodGroupFilter, { isGalaxyGroup, type Timeframe } from './components/PodGroupFilter';
+import StorageDashboard from './components/StorageDashboard';
 import { useMetrics } from './hooks/useMetrics';
 import { updateGroupColorMap, type GroupColorMap } from './lib/colors';
-import type { ConfigResponse, PodSample, Sample } from './lib/types';
+import type { ConfigResponse, DiskSample, PodSample, Sample } from './lib/types';
 
 const TIMEFRAME_LABELS: Record<Timeframe, string> = {
   '10m': '10m',
@@ -42,6 +45,23 @@ function isPodSample(value: unknown): value is PodSample {
   );
 }
 
+function isDiskSample(value: unknown): value is DiskSample {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const disk = value as Partial<DiskSample>;
+  return (
+    typeof disk.nodeCapacityBytes === 'number' &&
+    typeof disk.nodeUsedBytes === 'number' &&
+    typeof disk.nodeAvailableBytes === 'number' &&
+    typeof disk.imageUsedBytes === 'number' &&
+    typeof disk.diskPressure === 'boolean' &&
+    typeof disk.ioPsiSomeAvg10 === 'number' &&
+    typeof disk.ioPsiFullAvg10 === 'number'
+  );
+}
+
 function isSample(value: unknown): value is Sample {
   if (!value || typeof value !== 'object') {
     return false;
@@ -53,7 +73,8 @@ function isSample(value: unknown): value is Sample {
     Array.isArray(sample.pods) &&
     sample.pods.every(isPodSample) &&
     typeof sample.clusterCpuCapacityMillicores === 'number' &&
-    typeof sample.clusterMemCapacityBytes === 'number'
+    typeof sample.clusterMemCapacityBytes === 'number' &&
+    (sample.disk === undefined || isDiskSample(sample.disk))
   );
 }
 
@@ -96,6 +117,8 @@ function extractUploadedData(raw: unknown): { samples: Sample[]; config: ConfigR
 }
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState<'compute' | 'storage'>('compute');
+  const [tabsActionsEl, setTabsActionsEl] = useState<HTMLDivElement | null>(null);
   const [uploadedSamples, setUploadedSamples] = useState<Sample[] | null>(null);
   const [uploadedConfig, setUploadedConfig] = useState<ConfigResponse | null>(null);
   const [uploadedFilename, setUploadedFilename] = useState<string | null>(null);
@@ -174,6 +197,11 @@ export default function App() {
     const cutoff = latestTimestamp - lookbackMilliseconds;
     return samples.filter(sample => new Date(sample.timestamp).getTime() >= cutoff);
   }, [samples, selectedTimeframe]);
+
+  const hasDiskPressureInWindow = useMemo(
+    () => filteredSamples.some(sample => sample.disk?.diskPressure),
+    [filteredSamples]
+  );
 
   useEffect(() => {
     if (allGroups.length === 0) {
@@ -434,6 +462,7 @@ export default function App() {
             selectedGroups={selectedGroups}
             selectedTimeframe={selectedTimeframe}
             groupColorMap={groupColorMap}
+            activeTab={activeTab}
             onToggleGroup={toggleGroup}
             onSelectOnly={selectOnly}
             onSelectAll={selectAll}
@@ -547,6 +576,42 @@ export default function App() {
             </div>
           </div>
 
+          <div className="view-tabs" data-no-print>
+            <div className="view-tabs-list" role="tablist" aria-label="Telemetry view">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'compute'}
+                className="view-tab"
+                onClick={() => setActiveTab('compute')}
+              >
+                <Cpu size={16} aria-hidden="true" />
+                <span>Compute (CPU &amp; Memory)</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'storage'}
+                className="view-tab"
+                onClick={() => setActiveTab('storage')}
+              >
+                <HardDrive size={16} aria-hidden="true" />
+                <span>Storage &amp; Disk Pressure</span>
+                {hasDiskPressureInWindow && (
+                  <span className="view-tab-alert" title="Disk pressure detected in timeframe">
+                    Pressure
+                  </span>
+                )}
+              </button>
+            </div>
+            <div
+              ref={setTabsActionsEl}
+              className="view-tabs-actions"
+              role="status"
+              aria-live="polite"
+            />
+          </div>
+
           {uploadError && (
             <div
               className="status-banner"
@@ -652,19 +717,33 @@ export default function App() {
             </div>
           )}
 
-          <Dashboard
-            samples={filteredSamples}
-            selectedGroups={selectedGroups}
-            totalGroupCount={allGroups.length}
-            groupColorMap={groupColorMap}
-            resetZoomSignal={resetZoomSignal}
-            onSelectAllGroups={selectAll}
-            printMetadata={{
-              namespace: config?.namespace ?? '-',
-              timeframeLabel: TIMEFRAME_LABELS[selectedTimeframe],
-              sourceLabel
-            }}
-          />
+          {activeTab === 'storage' ? (
+            <StorageDashboard
+              samples={filteredSamples}
+              resetZoomSignal={resetZoomSignal}
+              toolbarPortalEl={tabsActionsEl}
+              printMetadata={{
+                namespace: config?.namespace ?? '-',
+                timeframeLabel: TIMEFRAME_LABELS[selectedTimeframe],
+                sourceLabel
+              }}
+            />
+          ) : (
+            <Dashboard
+              samples={filteredSamples}
+              selectedGroups={selectedGroups}
+              totalGroupCount={allGroups.length}
+              groupColorMap={groupColorMap}
+              resetZoomSignal={resetZoomSignal}
+              onSelectAllGroups={selectAll}
+              toolbarPortalEl={tabsActionsEl}
+              printMetadata={{
+                namespace: config?.namespace ?? '-',
+                timeframeLabel: TIMEFRAME_LABELS[selectedTimeframe],
+                sourceLabel
+              }}
+            />
+          )}
         </main>
       </div>
     </div>
