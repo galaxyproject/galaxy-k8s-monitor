@@ -20,3 +20,27 @@ export const formatAdaptiveMemoryFromMiB = (valueMiB: number): string => {
   }
   return formatGiBFromMiB(valueMiB);
 };
+
+export const formatRelativeDuration = (seconds: number): string => {
+  const clamped = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(clamped / 3600);
+  const minutes = Math.floor((clamped % 3600) / 60);
+  const secs = clamped % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(secs).padStart(2, '0')}s`;
+  }
+
+  return `${minutes}:${String(secs).padStart(2, '0')}`;
+};
+
+export const formatRelativeTime = (timestamp: string, firstTimestamp: string): string => {
+  const first = new Date(firstTimestamp).getTime();
+  const current = new Date(timestamp).getTime();
+  const diffSeconds = Math.max(0, Math.floor((current - first) / 1000));
+  return formatRelativeDuration(diffSeconds);
+};
+
+export const formatElapsedAxisTick = (label: string): string =>
+  label.replace(/^(\d+h\s+\d+m)\s+\d+s$/, '$1');
+

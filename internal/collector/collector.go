@@ -33,6 +33,20 @@ type kubeletStatsSummary struct {
 				UsedBytes int64 `json:"usedBytes"`
 			} `json:"imageFs"`
 		} `json:"runtime"`
+		Network *struct {
+			Name       string `json:"name"`
+			RxBytes    int64  `json:"rxBytes"`
+			RxErrors   int64  `json:"rxErrors"`
+			TxBytes    int64  `json:"txBytes"`
+			TxErrors   int64  `json:"txErrors"`
+			Interfaces []struct {
+				Name     string `json:"name"`
+				RxBytes  int64  `json:"rxBytes"`
+				RxErrors int64  `json:"rxErrors"`
+				TxBytes  int64  `json:"txBytes"`
+				TxErrors int64  `json:"txErrors"`
+			} `json:"interfaces"`
+		} `json:"network"`
 		SystemContainers []struct {
 			Name string `json:"name"`
 			IO   *struct {
@@ -306,19 +320,102 @@ func enrichDiskFromCadvisor(raw []byte, disk *model.DiskSample) bool {
 	return galaxyDevice != ""
 }
 
-func (collector *Collector) collectDiskSample(ctx context.Context, nodeList *corev1.NodeList) *model.DiskSample {
+func isExternalNetworkInterface(name string) bool {
+	if name == "" || name == "lo" {
+		return false
+	}
+	virtualPrefixes := []string{
+		"cali", "flannel", "cni", "veth", "cilium", "lxc",
+		"docker", "br-", "virbr", "vnet", "kube-", "nodelocal",
+		"tunl", "vxlan", "wg", "dummy", "sit", "erspan", "gre",
+	}
+	for _, prefix := range virtualPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return false
+		}
+	}
+	return true
+}
+
+func enrichNetworkFromCadvisor(raw []byte, netSample *model.NetworkSample, includeBytesAndErrors bool) bool {
+	if len(raw) == 0 || netSample == nil {
+		return false
+	}
+
+	var rxDropped, txDropped int64
+	var rxBytes, txBytes, rxErrors, txErrors int64
+	found := false
+
+	scanner := bufio.NewScanner(bytes.NewReader(raw))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "container_network_") {
+			continue
+		}
+		labels, val, ok := parsePromLineValue(line)
+		if !ok {
+			continue
+		}
+		if extractPromLabel(labels, "id") != "/" || extractPromLabel(labels, "container") != "" {
+			continue
+		}
+		iface := extractPromLabel(labels, "interface")
+		if !isExternalNetworkInterface(iface) {
+			continue
+		}
+
+		intVal := int64(math.Round(val))
+		switch {
+		case strings.HasPrefix(line, "container_network_receive_packets_dropped_total{"):
+			rxDropped += intVal
+			found = true
+		case strings.HasPrefix(line, "container_network_transmit_packets_dropped_total{"):
+			txDropped += intVal
+			found = true
+		case includeBytesAndErrors && strings.HasPrefix(line, "container_network_receive_bytes_total{"):
+			rxBytes += intVal
+			found = true
+		case includeBytesAndErrors && strings.HasPrefix(line, "container_network_transmit_bytes_total{"):
+			txBytes += intVal
+			found = true
+		case includeBytesAndErrors && strings.HasPrefix(line, "container_network_receive_errors_total{"):
+			rxErrors += intVal
+			found = true
+		case includeBytesAndErrors && strings.HasPrefix(line, "container_network_transmit_errors_total{"):
+			txErrors += intVal
+			found = true
+		}
+	}
+
+	if found {
+		netSample.RxDropped += rxDropped
+		netSample.TxDropped += txDropped
+		if includeBytesAndErrors {
+			netSample.RxBytes += rxBytes
+			netSample.TxBytes += txBytes
+			netSample.RxErrors += rxErrors
+			netSample.TxErrors += txErrors
+		}
+	}
+	return found
+}
+
+func (collector *Collector) collectNodeTelemetry(ctx context.Context, nodeList *corev1.NodeList) (*model.DiskSample, *model.NetworkSample) {
 	if nodeList == nil || len(nodeList.Items) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	disk := &model.DiskSample{}
-	hasData := false
+	hasDiskData := false
+	netSample := &model.NetworkSample{}
+	hasNetData := false
 
 	for _, node := range nodeList.Items {
 		for _, cond := range node.Status.Conditions {
 			if cond.Type == corev1.NodeDiskPressure && cond.Status == corev1.ConditionTrue {
 				disk.DiskPressure = true
-				hasData = true
+				hasDiskData = true
 			}
 		}
 
@@ -345,12 +442,12 @@ func (collector *Collector) collectDiskSample(ctx context.Context, nodeList *cor
 			disk.NodeCapacityBytes += summary.Node.Fs.CapacityBytes
 			disk.NodeUsedBytes += summary.Node.Fs.UsedBytes
 			disk.NodeAvailableBytes += summary.Node.Fs.AvailableBytes
-			hasData = true
+			hasDiskData = true
 		}
 
 		if summary.Node.Runtime != nil && summary.Node.Runtime.ImageFs != nil {
 			disk.ImageUsedBytes += summary.Node.Runtime.ImageFs.UsedBytes
-			hasData = true
+			hasDiskData = true
 		}
 
 		for _, sysContainer := range summary.Node.SystemContainers {
@@ -361,7 +458,7 @@ func (collector *Collector) collectDiskSample(ctx context.Context, nodeList *cor
 				if sysContainer.IO.PSI.Full.Avg10 > disk.IOPsiFullAvg10 {
 					disk.IOPsiFullAvg10 = sysContainer.IO.PSI.Full.Avg10
 				}
-				hasData = true
+				hasDiskData = true
 			}
 		}
 
@@ -374,12 +471,36 @@ func (collector *Collector) collectDiskSample(ctx context.Context, nodeList *cor
 					disk.GalaxyPVCCapacityBytes = vol.CapacityBytes
 					disk.GalaxyPVCUsedBytes = vol.UsedBytes
 					disk.GalaxyPVCAvailableBytes = vol.AvailableBytes
-					hasData = true
+					hasDiskData = true
 					break
 				}
 			}
 			if disk.GalaxyPVCCapacityBytes > 0 {
 				break
+			}
+		}
+
+		nodeNetFromSummary := false
+		if summary.Node.Network != nil {
+			if len(summary.Node.Network.Interfaces) > 0 {
+				for _, iface := range summary.Node.Network.Interfaces {
+					if isExternalNetworkInterface(iface.Name) {
+						netSample.RxBytes += iface.RxBytes
+						netSample.TxBytes += iface.TxBytes
+						netSample.RxErrors += iface.RxErrors
+						netSample.TxErrors += iface.TxErrors
+						nodeNetFromSummary = true
+						hasNetData = true
+					}
+				}
+			}
+			if !nodeNetFromSummary && (summary.Node.Network.RxBytes > 0 || summary.Node.Network.TxBytes > 0) {
+				netSample.RxBytes += summary.Node.Network.RxBytes
+				netSample.TxBytes += summary.Node.Network.TxBytes
+				netSample.RxErrors += summary.Node.Network.RxErrors
+				netSample.TxErrors += summary.Node.Network.TxErrors
+				nodeNetFromSummary = true
+				hasNetData = true
 			}
 		}
 
@@ -390,15 +511,23 @@ func (collector *Collector) collectDiskSample(ctx context.Context, nodeList *cor
 			DoRaw(ctx)
 		if err == nil && len(cadvisorRaw) > 0 {
 			if enrichDiskFromCadvisor(cadvisorRaw, disk) {
-				hasData = true
+				hasDiskData = true
+			}
+			if enrichNetworkFromCadvisor(cadvisorRaw, netSample, !nodeNetFromSummary) {
+				hasNetData = true
 			}
 		}
 	}
 
-	if !hasData {
-		return nil
+	var outDisk *model.DiskSample
+	if hasDiskData {
+		outDisk = disk
 	}
-	return disk
+	var outNet *model.NetworkSample
+	if hasNetData {
+		outNet = netSample
+	}
+	return outDisk, outNet
 }
 
 func (collector *Collector) collectOnce(ctx context.Context) {
@@ -487,7 +616,7 @@ func (collector *Collector) collectOnce(ctx context.Context) {
 		return podSamples[left].Name < podSamples[right].Name
 	})
 
-	diskSample := collector.collectDiskSample(ctx, nodeList)
+	diskSample, netSample := collector.collectNodeTelemetry(ctx, nodeList)
 
 	sample := model.Sample{
 		Timestamp:                 timestamp,
@@ -495,6 +624,7 @@ func (collector *Collector) collectOnce(ctx context.Context) {
 		ClusterCPUCapacityMilli:   clusterCPUCapacityMilli,
 		ClusterMemoryCapacityByte: clusterMemoryCapacityByte,
 		Disk:                      diskSample,
+		Network:                   netSample,
 	}
 
 	collector.store.Append(sample)
@@ -502,4 +632,5 @@ func (collector *Collector) collectOnce(ctx context.Context) {
 		collector.onSample(sample)
 	}
 }
+
 

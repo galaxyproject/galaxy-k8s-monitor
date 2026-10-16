@@ -18,6 +18,7 @@ import {
   OVERDRAW_COLOR,
   REQUEST_LINE_COLOR
 } from '../lib/colors';
+import { formatElapsedAxisTick } from '../lib/units';
 
 type Series = {
   name: string;
@@ -69,7 +70,9 @@ function PerPodTooltip({
 
   return (
     <div className="chart-tooltip">
-      <div className="chart-tooltip-meta">Elapsed time: {label}</div>
+      <div className="chart-tooltip-meta">
+        Elapsed time: {label ? formatElapsedAxisTick(String(label)) : '-'}
+      </div>
       <div className="chart-tooltip-meta">Timestamp: {formattedTimestamp}</div>
       <div className="chart-tooltip-total" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span className="color-swatch" style={{ background: podColor }} aria-hidden="true" />
@@ -454,7 +457,7 @@ export default function PerPodChart({
                                     : 'middle'
                               }
                             >
-                              {payload.value}
+                              {formatElapsedAxisTick(String(payload.value))}
                             </text>
                           )}
                           interval="preserveStartEnd"

@@ -22,12 +22,22 @@ export type DiskSample = {
   ioPsiFullAvg10: number;
 };
 
+export type NetworkSample = {
+  rxBytes: number;
+  txBytes: number;
+  rxDropped?: number;
+  txDropped?: number;
+  rxErrors?: number;
+  txErrors?: number;
+};
+
 export type Sample = {
   timestamp: string;
   pods: PodSample[];
   clusterCpuCapacityMillicores: number;
   clusterMemCapacityBytes: number;
   disk?: DiskSample;
+  network?: NetworkSample;
 };
 
 export type ConfigResponse = {
@@ -37,3 +47,4 @@ export type ConfigResponse = {
   basePath: string;
   podGroups: string[];
 };
+

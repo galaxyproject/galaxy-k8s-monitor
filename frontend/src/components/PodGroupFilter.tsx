@@ -15,7 +15,7 @@ type Props = {
   selectedGroups: Set<string>;
   selectedTimeframe: Timeframe;
   groupColorMap?: GroupColorMap;
-  activeTab?: 'compute' | 'storage';
+  activeTab?: 'compute' | 'storage' | 'network';
   onToggleGroup: (name: string) => void;
   onSelectOnly: (name: string) => void;
   onSelectAll: () => void;
@@ -96,14 +96,24 @@ export default function PodGroupFilter({
         </div>
       </div>
 
-      {activeTab === 'storage' ? (
+      {activeTab === 'storage' || activeTab === 'network' ? (
         <div className="control-group">
           <div className="control-group-header">
             <h2>Scope</h2>
           </div>
           <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--monitor-grey)' }}>
-            Storage and disk pressure telemetry are collected at the node/filesystem level. Switch
-            to the <strong>Compute</strong> tab to filter CPU &amp; Memory by pod group.
+            {activeTab === 'storage' ? (
+              <>
+                Storage and disk pressure telemetry are collected at the node/filesystem level.
+                Switch to the <strong>Compute</strong> tab to filter CPU &amp; Memory by pod group.
+              </>
+            ) : (
+              <>
+                Network throughput and cumulative ingress/egress telemetry are collected at the
+                node external interface level. Switch to the <strong>Compute</strong> tab to filter
+                CPU &amp; Memory by pod group.
+              </>
+            )}
           </p>
         </div>
       ) : (

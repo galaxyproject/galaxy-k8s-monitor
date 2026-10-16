@@ -8,6 +8,7 @@ import {
   FileText,
   HardDrive,
   Loader2,
+  Network,
   Printer,
   Radio,
   RotateCcw,
@@ -17,11 +18,12 @@ import {
   X
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
+import NetworkDashboard from './components/NetworkDashboard';
 import PodGroupFilter, { isGalaxyGroup, type Timeframe } from './components/PodGroupFilter';
 import StorageDashboard from './components/StorageDashboard';
 import { useMetrics } from './hooks/useMetrics';
 import { updateGroupColorMap, type GroupColorMap } from './lib/colors';
-import type { ConfigResponse, DiskSample, PodSample, Sample } from './lib/types';
+import type { ConfigResponse, DiskSample, NetworkSample, PodSample, Sample } from './lib/types';
 
 const TIMEFRAME_LABELS: Record<Timeframe, string> = {
   '10m': '10m',
@@ -62,6 +64,22 @@ function isDiskSample(value: unknown): value is DiskSample {
   );
 }
 
+function isNetworkSample(value: unknown): value is NetworkSample {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const network = value as Partial<NetworkSample>;
+  return (
+    typeof network.rxBytes === 'number' &&
+    typeof network.txBytes === 'number' &&
+    (network.rxDropped === undefined || typeof network.rxDropped === 'number') &&
+    (network.txDropped === undefined || typeof network.txDropped === 'number') &&
+    (network.rxErrors === undefined || typeof network.rxErrors === 'number') &&
+    (network.txErrors === undefined || typeof network.txErrors === 'number')
+  );
+}
+
 function isSample(value: unknown): value is Sample {
   if (!value || typeof value !== 'object') {
     return false;
@@ -74,7 +92,8 @@ function isSample(value: unknown): value is Sample {
     sample.pods.every(isPodSample) &&
     typeof sample.clusterCpuCapacityMillicores === 'number' &&
     typeof sample.clusterMemCapacityBytes === 'number' &&
-    (sample.disk === undefined || isDiskSample(sample.disk))
+    (sample.disk === undefined || isDiskSample(sample.disk)) &&
+    (sample.network === undefined || isNetworkSample(sample.network))
   );
 }
 
@@ -117,7 +136,7 @@ function extractUploadedData(raw: unknown): { samples: Sample[]; config: ConfigR
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'compute' | 'storage'>('compute');
+  const [activeTab, setActiveTab] = useState<'compute' | 'storage' | 'network'>('compute');
   const [tabsActionsEl, setTabsActionsEl] = useState<HTMLDivElement | null>(null);
   const [uploadedSamples, setUploadedSamples] = useState<Sample[] | null>(null);
   const [uploadedConfig, setUploadedConfig] = useState<ConfigResponse | null>(null);
@@ -202,6 +221,22 @@ export default function App() {
     () => filteredSamples.some(sample => sample.disk?.diskPressure),
     [filteredSamples]
   );
+
+  const hasNetworkContentionInWindow = useMemo(() => {
+    const netSamples = filteredSamples.filter(sample => sample.network);
+    if (netSamples.length < 2) {
+      return false;
+    }
+    const first = netSamples[0].network!;
+    const last = netSamples[netSamples.length - 1].network!;
+    const dropsDelta =
+      Math.max(0, (last.rxDropped ?? 0) - (first.rxDropped ?? 0)) +
+      Math.max(0, (last.txDropped ?? 0) - (first.txDropped ?? 0));
+    const errorsDelta =
+      Math.max(0, (last.rxErrors ?? 0) - (first.rxErrors ?? 0)) +
+      Math.max(0, (last.txErrors ?? 0) - (first.txErrors ?? 0));
+    return dropsDelta > 0 || errorsDelta > 0;
+  }, [filteredSamples]);
 
   useEffect(() => {
     if (allGroups.length === 0) {
@@ -603,6 +638,21 @@ export default function App() {
                   </span>
                 )}
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'network'}
+                className="view-tab"
+                onClick={() => setActiveTab('network')}
+              >
+                <Network size={16} aria-hidden="true" />
+                <span>Network</span>
+                {hasNetworkContentionInWindow && (
+                  <span className="view-tab-alert" title="Network packet drops or errors detected in timeframe">
+                    Drops
+                  </span>
+                )}
+              </button>
             </div>
             <div
               ref={setTabsActionsEl}
@@ -719,6 +769,17 @@ export default function App() {
 
           {activeTab === 'storage' ? (
             <StorageDashboard
+              samples={filteredSamples}
+              resetZoomSignal={resetZoomSignal}
+              toolbarPortalEl={tabsActionsEl}
+              printMetadata={{
+                namespace: config?.namespace ?? '-',
+                timeframeLabel: TIMEFRAME_LABELS[selectedTimeframe],
+                sourceLabel
+              }}
+            />
+          ) : activeTab === 'network' ? (
+            <NetworkDashboard
               samples={filteredSamples}
               resetZoomSignal={resetZoomSignal}
               toolbarPortalEl={tabsActionsEl}

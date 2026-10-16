@@ -28,7 +28,7 @@ import {
   REQUEST_LINE_COLOR
 } from '../lib/colors';
 import type { Sample } from '../lib/types';
-import { bytesToGiB, formatGiB } from '../lib/units';
+import { bytesToGiB, formatElapsedAxisTick, formatGiB, formatRelativeTime } from '../lib/units';
 
 type PrintMetadata = {
   namespace: string;
@@ -99,14 +99,8 @@ function formatCompactGiB(valueGiB: number): string {
   return `${Math.round(valueGiB).toLocaleString()} GiB`;
 }
 
-function relativeTime(timestamp: string, firstTimestamp: string): string {
-  const first = new Date(firstTimestamp).getTime();
-  const current = new Date(timestamp).getTime();
-  const diffSeconds = Math.max(0, Math.floor((current - first) / 1000));
-  const minutes = Math.floor(diffSeconds / 60);
-  const seconds = diffSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
+const relativeTime = formatRelativeTime;
+
 
 function formatClockTime(timestamp: string): string {
   if (!timestamp) return '-';
@@ -234,7 +228,9 @@ function GalaxyDiskTooltip({
 
   return (
     <div className="chart-tooltip">
-      <div className="chart-tooltip-meta">Elapsed time: {label}</div>
+      <div className="chart-tooltip-meta">
+        Elapsed time: {label ? formatElapsedAxisTick(String(label)) : '-'}
+      </div>
       <div className="chart-tooltip-meta">Timestamp: {formattedTimestamp}</div>
       <div className="chart-tooltip-total">
         <div>
@@ -301,7 +297,9 @@ function PostgresDiskTooltip({
 
   return (
     <div className="chart-tooltip">
-      <div className="chart-tooltip-meta">Elapsed time: {label}</div>
+      <div className="chart-tooltip-meta">
+        Elapsed time: {label ? formatElapsedAxisTick(String(label)) : '-'}
+      </div>
       <div className="chart-tooltip-meta">Timestamp: {formattedTimestamp}</div>
       <div className="chart-tooltip-total">
         <div>
@@ -370,7 +368,9 @@ function StorageUsageTooltip({
 
   return (
     <div className="chart-tooltip">
-      <div className="chart-tooltip-meta">Elapsed time: {label}</div>
+      <div className="chart-tooltip-meta">
+        Elapsed time: {label ? formatElapsedAxisTick(String(label)) : '-'}
+      </div>
       <div className="chart-tooltip-meta">Timestamp: {formattedTimestamp}</div>
       <div className="chart-tooltip-total">
         <div>
@@ -457,7 +457,9 @@ function DiskPressureTooltip({
 
   return (
     <div className="chart-tooltip">
-      <div className="chart-tooltip-meta">Elapsed time: {label}</div>
+      <div className="chart-tooltip-meta">
+        Elapsed time: {label ? formatElapsedAxisTick(String(label)) : '-'}
+      </div>
       <div className="chart-tooltip-meta">Timestamp: {formattedTimestamp}</div>
       <div className="chart-tooltip-total">
         <div>
@@ -771,7 +773,7 @@ export default function StorageDashboard({
       `#${zoomRange.startSampleIndex}`;
     const endLabel =
       getRelativeTimeBySampleIndex(zoomRange.endSampleIndex) ?? `#${zoomRange.endSampleIndex}`;
-    return `${startLabel} – ${endLabel}`;
+    return `${formatElapsedAxisTick(startLabel)} – ${formatElapsedAxisTick(endLabel)}`;
   }, [zoomRange, storagePoints]);
 
   if (!summary) {
@@ -1940,6 +1942,7 @@ export default function StorageDashboard({
                         minTickGap={36}
                         stroke={CHART_AXIS_COLOR}
                         tick={{ fill: CHART_AXIS_COLOR, fontSize: 13 }}
+                        tickFormatter={(val: string) => formatElapsedAxisTick(String(val))}
                       />
                       <YAxis
                         domain={[0, Math.ceil(latest.galaxyPvcCapacityGiB)]}
@@ -2190,6 +2193,7 @@ export default function StorageDashboard({
                       minTickGap={36}
                       stroke={CHART_AXIS_COLOR}
                       tick={{ fill: CHART_AXIS_COLOR, fontSize: 13 }}
+                      tickFormatter={(val: string) => formatElapsedAxisTick(String(val))}
                     />
                     <YAxis
                       domain={[0, Math.ceil(latest.capacityGiB)]}
@@ -2444,6 +2448,7 @@ export default function StorageDashboard({
                         minTickGap={36}
                         stroke={CHART_AXIS_COLOR}
                         tick={{ fill: CHART_AXIS_COLOR, fontSize: 13 }}
+                        tickFormatter={(val: string) => formatElapsedAxisTick(String(val))}
                       />
                       <YAxis
                         domain={[0, Math.ceil(latest.postgresCapacityGiB)]}
@@ -2658,6 +2663,7 @@ export default function StorageDashboard({
                     minTickGap={36}
                     stroke={CHART_AXIS_COLOR}
                     tick={{ fill: CHART_AXIS_COLOR, fontSize: 13 }}
+                    tickFormatter={(val: string) => formatElapsedAxisTick(String(val))}
                   />
                   <YAxis
                     stroke={CHART_AXIS_COLOR}

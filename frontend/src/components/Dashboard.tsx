@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Sample } from '../lib/types';
-import { bytesToMiB } from '../lib/units';
+import { bytesToMiB, formatElapsedAxisTick, formatRelativeTime } from '../lib/units';
 import {
   CPU_RADAR_COLOR,
   getGroupColor,
@@ -30,14 +30,8 @@ type Props = {
   printMetadata?: PrintMetadata;
 };
 
-function relativeTime(timestamp: string, firstTimestamp: string): string {
-  const first = new Date(firstTimestamp).getTime();
-  const current = new Date(timestamp).getTime();
-  const diffSeconds = Math.max(0, Math.floor((current - first) / 1000));
-  const minutes = Math.floor(diffSeconds / 60);
-  const seconds = diffSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
+const relativeTime = formatRelativeTime;
+
 
 export default function Dashboard({
   samples,
@@ -304,7 +298,9 @@ export default function Dashboard({
       peakTotalMemoryMiB,
       cpuRadarRows,
       memoryRadarRows,
-      selectedRadarRelativeTime: relativeTime(radarSourceSample.timestamp, firstTimestamp),
+      selectedRadarRelativeTime: formatElapsedAxisTick(
+        relativeTime(radarSourceSample.timestamp, firstTimestamp)
+      ),
       selectedRadarTimestamp: radarSourceSample.timestamp,
       activeSampleIndex,
       clusterCPUCapacityMillicores: latest.clusterCpuCapacityMillicores ?? 0,
@@ -322,11 +318,11 @@ export default function Dashboard({
     const endPoint = graphModel.timeline.find(pt => pt.sampleIndex === zoomRange.endSampleIndex);
     const startRel =
       typeof startPoint?.relativeTime === 'string'
-        ? startPoint.relativeTime
+        ? formatElapsedAxisTick(startPoint.relativeTime)
         : `#${zoomRange.startSampleIndex}`;
     const endRel =
       typeof endPoint?.relativeTime === 'string'
-        ? endPoint.relativeTime
+        ? formatElapsedAxisTick(endPoint.relativeTime)
         : `#${zoomRange.endSampleIndex}`;
     return `${startRel} – ${endRel}`;
   }, [zoomRange, graphModel.timeline]);

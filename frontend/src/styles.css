@@ -1096,6 +1096,21 @@ button:disabled {
   border: 1px solid #cbd5e1;
 }
 
+.stat-sparkline {
+  height: 22px;
+  position: relative;
+  border-radius: var(--monitor-radius-control);
+  background: var(--monitor-surface-muted, #f7fafc);
+  overflow: hidden;
+  border: 1px solid var(--monitor-border-row, #e3e9ee);
+}
+
+.stat-sparkline-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .stat-meter-tooltip {
   position: absolute;
   bottom: calc(100% + 8px);

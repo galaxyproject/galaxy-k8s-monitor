@@ -37,6 +37,10 @@ export const DISK_PSI_SOME_COLOR = '#E6B86A';
 export const DISK_PSI_FULL_COLOR = '#A29BFE';
 export const DISK_GC_LINE_COLOR = '#b45309';
 
+export const NETWORK_INGRESS_COLOR = '#5AA9A4';
+export const NETWORK_EGRESS_COLOR = '#A29BFE';
+export const NETWORK_CONTENTION_COLOR = '#b45309';
+
 export const REQUEST_LINE_COLOR = '#2c3143';
 export const ACTIVE_SAMPLE_LINE_COLOR = '#2c3143';
 export const CHART_GRID_COLOR = '#dce5ed';

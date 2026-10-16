@@ -21,6 +21,7 @@ import {
   REQUEST_LINE_COLOR,
   type GroupColorMap
 } from '../lib/colors';
+import { formatElapsedAxisTick } from '../lib/units';
 
 type Point = Record<string, number | string>;
 
@@ -72,7 +73,9 @@ function CumulativeTooltip({
 
   return (
     <div className="chart-tooltip">
-      <div className="chart-tooltip-meta">Elapsed time: {label}</div>
+      <div className="chart-tooltip-meta">
+        Elapsed time: {label ? formatElapsedAxisTick(String(label)) : '-'}
+      </div>
       <div className="chart-tooltip-meta">Timestamp: {formattedTimestamp}</div>
       <div className="chart-tooltip-total">
         <div>
@@ -200,7 +203,7 @@ export default function CumulativeChart({
     }
     const startLabel = getRelativeTimeBySampleIndex(zoomRange.startSampleIndex) ?? `#${zoomRange.startSampleIndex}`;
     const endLabel = getRelativeTimeBySampleIndex(zoomRange.endSampleIndex) ?? `#${zoomRange.endSampleIndex}`;
-    return `${startLabel} – ${endLabel}`;
+    return `${formatElapsedAxisTick(startLabel)} – ${formatElapsedAxisTick(endLabel)}`;
   }, [zoomRange, data]);
 
   const tableRows = React.useMemo(() => {
@@ -347,6 +350,7 @@ export default function CumulativeChart({
                     minTickGap={36}
                     stroke={CHART_AXIS_COLOR}
                     tick={{ fill: CHART_AXIS_COLOR, fontSize: 13 }}
+                    tickFormatter={(val: string) => formatElapsedAxisTick(String(val))}
                   />
                   <YAxis
                     stroke={CHART_AXIS_COLOR}
