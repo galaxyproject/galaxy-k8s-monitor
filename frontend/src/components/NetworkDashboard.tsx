@@ -4,7 +4,6 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  Line,
   ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
@@ -1416,13 +1415,14 @@ export default function NetworkDashboard({
                       fillOpacity={0.35}
                       isAnimationActive={false}
                     />
-                    <Line
+                    <Area
                       type="monotone"
                       dataKey="displayEgressVolume"
                       name={`Egress / Data Out (${volumeChartScale.unit})`}
                       stroke={NETWORK_EGRESS_COLOR}
-                      strokeWidth={2.5}
-                      dot={false}
+                      strokeWidth={2}
+                      fill={NETWORK_EGRESS_COLOR}
+                      fillOpacity={0.35}
                       isAnimationActive={false}
                     />
                   </AreaChart>
