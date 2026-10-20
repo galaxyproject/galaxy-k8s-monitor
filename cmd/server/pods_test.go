@@ -14,7 +14,7 @@ func TestPodEndpointsRespectBasePath(t *testing.T) {
 		if base == "/" {
 			prefix = ""
 		}
-		for _, endpoint := range []string{"/api/pods?group=galaxy-web", "/api/pod-logs?pod=web"} {
+		for _, endpoint := range []string{"/api/pods?group=galaxy-web", "/api/pod-logs?pod=web", "/api/pod-manifest?pod=web&uid=sample"} {
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, httptest.NewRequest("GET", prefix+endpoint, nil))
 			if w.Code != 503 {

@@ -18,8 +18,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-// PodHandlers deliberately expose only the configured namespace and a small
-// projection of pod details, never environment variables or the full pod spec.
+// PodHandlers expose only the configured namespace. The list endpoint uses
+// a small projection; the manifest endpoint explicitly returns the full pod.
 type PodHandlers struct {
 	Client    kubernetes.Interface
 	Namespace string

@@ -159,7 +159,8 @@ snapshots do not provide live pod details or logs.
 The Helm chart grants read-only `pods/log` access in `monitor.namespace`.
 Upgrade the chart as well as the image when enabling this feature. A local
 kubeconfig must have equivalent access. The pod endpoints always use the
-configured namespace, and only a limited details projection is exposed.
+configured namespace. The pod list uses a limited details projection; the
+explicit Manifest view returns the full Pod object.
 Monitor has no built-in user authentication: restrict access at the ingress
 or reverse proxy to users authorized to see pod details and logs.
 
@@ -171,3 +172,24 @@ Additional endpoints (under the configured base path):
   `download=true` for an attachment without the preview limits. Add
   `timestamps=true` to include Kubernetes-added timestamps. Downloads
   have a two-minute request timeout; very slow transfers may be incomplete.
+
+### Pod manifest
+
+Select **Manifest** in the pod drawer to inspect the live Kubernetes Pod as
+YAML. This includes Kubernetes defaults, admission-injected configuration,
+metadata, resource requests/limits, volumes, containers, and current status.
+It is the current Pod object, not the original Helm template or a manifest
+for the owning Deployment/Job. Verbose `metadata.managedFields` are omitted.
+
+Use **Refresh manifest**, **Copy YAML**, or **Download YAML**. Manifest viewing
+works without selecting a container and uses the existing `get pods`
+permission. Like logs, it is unavailable for uploaded snapshots or removed
+pods, and checks the pod UID before serving a replacement's data.
+
+The manifest includes literal configuration stored in the Pod spec, such as
+inline environment values. Secret/ConfigMap references remain references;
+Monitor does not fetch their contents. Apply the same access controls used
+for reading pod specifications directly with Kubernetes.
+
+- `GET /api/pod-manifest?pod=<name>&uid=<uid>`: current Pod YAML.
+  Add `download=true` for a YAML attachment. Responses are not cached.

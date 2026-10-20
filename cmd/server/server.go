@@ -47,6 +47,7 @@ func NewRouter(config Config) http.Handler {
 
 	if config.PodHandlers != nil {
 		mux.HandleFunc(apiPrefix+"/pods", config.PodHandlers.Pods)
+		mux.HandleFunc(apiPrefix+"/pod-manifest", config.PodHandlers.Manifest)
 		mux.HandleFunc(apiPrefix+"/pod-logs", config.PodHandlers.Logs)
 	}
 

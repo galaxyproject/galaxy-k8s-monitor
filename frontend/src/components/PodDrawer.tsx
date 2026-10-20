@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Copy, Download, RefreshCw, X } from 'lucide-react';
+import PodManifest from './PodManifest';
 
 type Container = {
   name: string;
@@ -43,6 +44,7 @@ export default function PodDrawer({ group, live, onClose }: Props) {
   const [pods, setPods] = useState<Pod[]>([]);
   const [podUID, setPodUID] = useState('');
   const [containerName, setContainerName] = useState('');
+  const [view, setView] = useState<'logs' | 'manifest'>('logs');
   const [previous, setPrevious] = useState(false);
   const [showTimestamps, setShowTimestamps] = useState(false);
   const [copiedField, setCopiedField] = useState('');
@@ -130,7 +132,7 @@ export default function PodDrawer({ group, live, onClose }: Props) {
     setLogs('');
     setLogsError('');
     setLogsLoading(false);
-    if (!live || !logURL) return;
+    if (!live || !logURL || view !== 'logs') return;
     const controller = new AbortController();
     setLogsLoading(true);
     void (async () => {
@@ -152,7 +154,7 @@ export default function PodDrawer({ group, live, onClose }: Props) {
       }
     })();
     return () => controller.abort();
-  }, [live, logURL, logRevision]);
+  }, [live, logURL, logRevision, view]);
 
   useLayoutEffect(() => {
     if (!logsLoading && !logsError && logRef.current) {
@@ -233,6 +235,31 @@ export default function PodDrawer({ group, live, onClose }: Props) {
       ]
     : [];
 
+  const contentSwitch = (
+    <div
+      className="pod-content-views"
+      role="group"
+      aria-label="Pod content view"
+    >
+      <button
+        type="button"
+        className="btn-compact"
+        aria-pressed={view === 'logs'}
+        onClick={() => setView('logs')}
+      >
+        Logs
+      </button>
+      <button
+        type="button"
+        className="btn-compact"
+        aria-pressed={view === 'manifest'}
+        onClick={() => setView('manifest')}
+      >
+        Manifest
+      </button>
+    </div>
+  );
+
   return createPortal(
     <dialog
       ref={dialogRef}
@@ -258,6 +285,7 @@ export default function PodDrawer({ group, live, onClose }: Props) {
     >
       <header className="pod-drawer-header">
         <h2 id={titleId}>{group}</h2>
+        {pod && contentSwitch}
         {live && (
           <>
             {pods.length > 1 && (
@@ -369,58 +397,73 @@ export default function PodDrawer({ group, live, onClose }: Props) {
                 ))}
               </dl>
             )}
-            {pod && container && (
-              <section
-                className="pod-log-section"
-                aria-labelledby={`${titleId}-logs`}
-              >
+            {pod && view === 'manifest' && (
+              <PodManifest
+                key={pod.uid}
+                name={pod.name}
+                uid={pod.uid}
+              />
+            )}
+            {pod && view === 'logs' && (
+              <section className="pod-log-section" aria-label="Pod logs">
                 <div className="pod-drawer-toolbar">
-                  <h3 id={`${titleId}-logs`}>Logs</h3>
-                  <button
-                    type="button"
-                    className="btn-compact"
-                    disabled={logsLoading}
-                    onClick={() => setLogRevision((value) => value + 1)}
-                  >
-                    <RefreshCw size={14} aria-hidden="true" /> Refresh logs
-                  </button>
-                  <a
-                    className="btn-compact pod-log-download"
-                    href={`${logURL}&download=true`}
-                    download
-                  >
-                    <Download size={14} aria-hidden="true" /> Download available
-                    log
-                  </a>
-                  <button
-                    type="button"
-                    className="btn-compact"
-                    aria-pressed={showTimestamps}
-                    onClick={() => setShowTimestamps((value) => !value)}
-                    title="Toggle timestamps added by Kubernetes; application timestamps are unchanged"
-                  >
-                    {showTimestamps
-                      ? 'Hide added timestamps'
-                      : 'Show added timestamps'}
-                  </button>
-                  {container.restarts > 0 && (
-                    <label className="pod-previous">
-                      <input
-                        type="checkbox"
-                        checked={previous}
-                        onChange={(event) => setPrevious(event.target.checked)}
-                      />{' '}
-                      Previous container instance
-                    </label>
+                  {container && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-compact"
+                        disabled={logsLoading}
+                        onClick={() => setLogRevision((value) => value + 1)}
+                      >
+                        <RefreshCw size={14} aria-hidden="true" /> Refresh logs
+                      </button>
+                      <a
+                        className="btn-compact pod-log-download"
+                        href={`${logURL}&download=true`}
+                        download
+                      >
+                        <Download size={14} aria-hidden="true" /> Download
+                        available log
+                      </a>
+                      <button
+                        type="button"
+                        className="btn-compact"
+                        aria-pressed={showTimestamps}
+                        onClick={() => setShowTimestamps((value) => !value)}
+                        title="Toggle timestamps added by Kubernetes; application timestamps are unchanged"
+                      >
+                        {showTimestamps
+                          ? 'Hide added timestamps'
+                          : 'Show added timestamps'}
+                      </button>
+                      {container.restarts > 0 && (
+                        <label className="pod-previous">
+                          <input
+                            type="checkbox"
+                            checked={previous}
+                            onChange={(event) =>
+                              setPrevious(event.target.checked)
+                            }
+                          />{' '}
+                          Previous container instance
+                        </label>
+                      )}
+                    </>
                   )}
                 </div>
-                {logsLoading && <p role="status">Loading logs…</p>}
-                {logsError && (
+                {!container && (
+                  <p>
+                    Choose a container to view its logs, or select Manifest to
+                    inspect the pod.
+                  </p>
+                )}
+                {container && logsLoading && <p role="status">Loading logs…</p>}
+                {container && logsError && (
                   <p role="alert" className="pod-drawer-error">
                     {logsError}
                   </p>
                 )}
-                {!logsLoading && !logsError && (
+                {container && !logsLoading && !logsError && (
                   <pre
                     ref={logRef}
                     className="pod-logs"

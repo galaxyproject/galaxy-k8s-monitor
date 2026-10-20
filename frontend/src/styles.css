@@ -1875,9 +1875,12 @@ button:disabled {
   opacity: 1; pointer-events: auto;
 }
 .pod-detail-copy:hover { background: var(--monitor-surface-tint); }
-.pod-drawer-toolbar .btn-compact[aria-pressed="true"] {
+.pod-drawer-toolbar .btn-compact[aria-pressed="true"],
+.pod-content-views .btn-compact[aria-pressed="true"] {
   background: var(--monitor-primary); color: white; border-color: var(--monitor-primary);
 }
 @media (hover: none) {
   .pod-detail-copy { opacity: 1; pointer-events: auto; }
 }
+.pod-content-views { display: inline-flex; align-items: center; gap: .25rem; }
+.pod-manifest { tab-size: 2; }

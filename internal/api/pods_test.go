@@ -17,7 +17,7 @@ import (
 func podFixture(t *testing.T) (*PodHandlers, *[]string) {
 	t.Helper()
 	calls := []string{}
-	pod := `{"metadata":{"name":"galaxy-web-abc","namespace":"science","uid":"original"},"spec":{"containers":[{"name":"web","image":"galaxy:test","env":[{"name":"SECRET","value":"do-not-expose"}]}]},"status":{"phase":"Running","containerStatuses":[{"name":"web","ready":true,"restartCount":2,"state":{"running":{}}}]}}`
+	pod := `{"metadata":{"name":"galaxy-web-abc","namespace":"science","uid":"original","resourceVersion":"12","managedFields":[{"manager":"fixture","operation":"Update","apiVersion":"v1","fieldsType":"FieldsV1","fieldsV1":{"f:spec":{}}}]},"spec":{"containers":[{"name":"web","image":"galaxy:test","env":[{"name":"SECRET","value":"do-not-expose"}]}]},"status":{"phase":"Running","containerStatuses":[{"name":"web","ready":true,"restartCount":2,"state":{"running":{}}}]}}`
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, r.URL.RequestURI())
 		w.Header().Set("Content-Type", "application/json")
