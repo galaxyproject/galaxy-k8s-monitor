@@ -12,6 +12,7 @@ import CumulativeChart from './CumulativeChart';
 import PerPodChart from './PerPodChart';
 import PerPodRadarChart, { type RadarRow } from './PerPodRadarChart';
 import StatsBar from './StatsBar';
+import PodDrawer from './PodDrawer';
 
 type PrintMetadata = {
   namespace: string;
@@ -21,6 +22,7 @@ type PrintMetadata = {
 
 type Props = {
   samples: Sample[];
+  live?: boolean;
   selectedGroups: Set<string>;
   totalGroupCount?: number;
   groupColorMap?: GroupColorMap;
@@ -35,6 +37,7 @@ const relativeTime = formatRelativeTime;
 
 export default function Dashboard({
   samples,
+  live = true,
   selectedGroups,
   totalGroupCount,
   groupColorMap,
@@ -47,6 +50,7 @@ export default function Dashboard({
     () => Array.from(selectedGroups).sort((left, right) => left.localeCompare(right)),
     [selectedGroups]
   );
+  const [drawerGroup, setDrawerGroup] = useState<string | null>(null);
   const [pinnedTimestamp, setPinnedTimestamp] = useState<string | null>(null);
   const [zoomRange, setZoomRange] = useState<{
     startSampleIndex: number;
@@ -332,6 +336,7 @@ export default function Dashboard({
 
   return (
     <div data-print-content className="dashboard-stack">
+      {drawerGroup !== null && <PodDrawer key={`${drawerGroup}-${live}`} group={drawerGroup} live={live} onClose={() => setDrawerGroup(null)} />}
       <div className="print-summary-header">
         <div className="print-summary-title">
           Galaxy K8s Monitor — Resource Utilization Report
@@ -452,6 +457,7 @@ export default function Dashboard({
       />
       <PerPodChart
         title="Per-Pod CPU Horizon"
+        onOpenPod={setDrawerGroup}
         series={graphModel.cpuSeries}
         unit="m"
         onPointClick={handlePointClick}
@@ -461,6 +467,7 @@ export default function Dashboard({
       />
       <PerPodChart
         title="Per-Pod Memory Horizon"
+        onOpenPod={setDrawerGroup}
         series={graphModel.memorySeries}
         unit=" MiB"
         onPointClick={handlePointClick}

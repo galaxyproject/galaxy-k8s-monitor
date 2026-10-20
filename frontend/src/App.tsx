@@ -786,6 +786,7 @@ export default function App() {
             />
           ) : (
             <Dashboard
+              live={!isStaticMode}
               samples={filteredSamples}
               selectedGroups={selectedGroups}
               totalGroupCount={allGroups.length}

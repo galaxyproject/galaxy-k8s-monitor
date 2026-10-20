@@ -130,3 +130,44 @@ Open:
 - Default sampling is 30 seconds.
 - Default retention is 24 hours in memory.
 - Data is in-memory only and is not persisted across restarts.
+
+## Pod details and logs
+
+On the Compute tab, select a pod-group name in either horizon chart to open
+its details drawer. Chart datapoints still pin the selected sample. Details
+and logs describe current Kubernetes pods, not the historical chart time.
+
+A single matching pod and its single regular container load automatically.
+If there are replicas, choose a pod; if there are multiple regular
+containers, choose a container. Init containers are also available in the
+container selector. The drawer shows status, readiness, restarts, creation
+time, node, image, and resource requests/limits.
+
+The log preview includes up to 1,000 recent lines / 1 MiB. Kubernetes-added
+timestamps are hidden by default; **Show added timestamps** enables them for
+both the preview and download. Timestamps written by the application stay
+unchanged. Hover or focus the pod/image fields to copy their full values.
+Use **Refresh logs** for new output, or **Download available log** to download
+without the preview limits. When a container has restarted, the previous
+instance's logs can be selected. Live following is not implemented.
+
+Downloads contain the selected container's available stdout/stderr log.
+Kubernetes does not return rotated log files through this API, and logs for
+removed pods may no longer exist. Monitor does not archive logs. Uploaded
+snapshots do not provide live pod details or logs.
+
+The Helm chart grants read-only `pods/log` access in `monitor.namespace`.
+Upgrade the chart as well as the image when enabling this feature. A local
+kubeconfig must have equivalent access. The pod endpoints always use the
+configured namespace, and only a limited details projection is exposed.
+Monitor has no built-in user authentication: restrict access at the ingress
+or reverse proxy to users authorized to see pod details and logs.
+
+Additional endpoints (under the configured base path):
+
+- `GET /api/pods?group=<pod-group>`: current matching pods and containers.
+- `GET /api/pod-logs?pod=<name>&uid=<uid>&container=<name>`: recent logs.
+  Add `previous=true` for the previous container instance, and
+  `download=true` for an attachment without the preview limits. Add
+  `timestamps=true` to include Kubernetes-added timestamps. Downloads
+  have a two-minute request timeout; very slow transfers may be incomplete.

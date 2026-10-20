@@ -15,6 +15,7 @@ type Config struct {
 	BasePath    string
 	StaticFiles fs.FS
 	Handlers    *api.Handlers
+	PodHandlers *api.PodHandlers
 }
 
 func normalizeBasePath(input string) string {
@@ -40,6 +41,11 @@ func NewRouter(config Config) http.Handler {
 	apiPrefix := basePath + "/api"
 	if basePath == "/" {
 		apiPrefix = "/api"
+	}
+
+	if config.PodHandlers != nil {
+		mux.HandleFunc(apiPrefix+"/pods", config.PodHandlers.Pods)
+		mux.HandleFunc(apiPrefix+"/pod-logs", config.PodHandlers.Logs)
 	}
 
 	mux.HandleFunc(apiPrefix+"/samples", config.Handlers.Samples)

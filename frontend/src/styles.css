@@ -1780,3 +1780,104 @@ button:disabled {
     scroll-behavior: auto !important;
   }
 }
+
+/* Pod inspection stays separate from chart sample pinning. */
+.pod-details-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--monitor-primary);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.pod-details-link:hover { color: var(--monitor-primary-hover); }
+.pod-drawer {
+  position: fixed;
+  inset: auto 0 0;
+  margin: 0;
+  width: 100%;
+  height: 50dvh;
+  max-width: 100%;
+  max-height: 50dvh;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--monitor-border-panel);
+  border-radius: 8px 8px 0 0;
+  background: var(--monitor-surface);
+  color: var(--monitor-dark);
+  box-shadow: 0 -8px 30px rgba(44,49,67,.2);
+  overflow: hidden;
+}
+.pod-drawer[open] { display: flex; flex-direction: column; }
+.pod-drawer::backdrop { background: rgba(44,49,67,.4); }
+.pod-drawer-header {
+  display: flex; flex-shrink: 0; align-items: center; flex-wrap: wrap;
+  gap: .4rem .8rem; padding: .4rem 1rem;
+  background: var(--monitor-surface);
+  border-bottom: 1px solid var(--monitor-border-panel);
+}
+.pod-drawer-header h2 { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+.pod-drawer-close { margin-left: auto; }
+.pod-drawer-body {
+  display: flex; flex-direction: column; flex: 1; min-height: 0;
+  overflow: hidden; padding: .5rem 1rem; gap: .4rem;
+}
+.pod-drawer-toolbar { display: flex; flex-shrink: 0; align-items: center; flex-wrap: wrap; gap: .4rem .75rem; }
+.pod-drawer-toolbar h3 { margin: 0; font-size: .95rem; }
+.pod-drawer-note { flex-shrink: 0; margin: .25rem 0 0; color: var(--monitor-grey); font-size: .75rem; }
+.pod-drawer-field { display: flex; align-items: center; gap: .4rem; min-width: 0; font-size: .8rem; font-weight: 700; }
+.pod-drawer-field select {
+  max-width: 260px; min-width: 0; padding: .25rem .4rem;
+  border: 1px solid var(--monitor-border-control);
+  border-radius: var(--monitor-radius-control); color: var(--monitor-dark); background: white;
+}
+.pod-details {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex-shrink: 0; gap: .2rem 1rem; max-height: 12.5dvh;
+  overflow-y: auto; margin: 0; padding: 0 .25rem .25rem 0;
+  font-size: .8rem;
+}
+.pod-details > div { display: flex; align-items: baseline; min-width: 0; gap: .4rem; }
+.pod-details dt { flex-shrink: 0; font-weight: 700; }
+.pod-details dd { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pod-log-section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.pod-log-download { text-decoration: none; }
+.pod-previous { display: flex; align-items: center; gap: .4rem; font-size: .8rem; }
+.pod-logs {
+  flex: 1; min-height: 0; overflow: auto; margin: .4rem 0 0;
+  padding: .65rem; border-radius: var(--monitor-radius-control);
+  background: var(--monitor-dark); color: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .8rem; line-height: 1.5; white-space: pre;
+}
+.pod-drawer-error { margin: 0; padding: .5rem; border-left: 3px solid var(--monitor-overdraw); background: var(--monitor-overdraw-bg); }
+@media (max-width: 1100px) {
+  .pod-details { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .pod-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pod-drawer-header { gap: .3rem .5rem; padding: .35rem .6rem; }
+  .pod-drawer-field select { max-width: 140px; }
+  .pod-drawer-body { padding: .4rem .6rem; }
+  .pod-details > div { flex-wrap: wrap; gap: 0 .3rem; }
+  .pod-drawer-note { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+.pod-detail-copy {
+  display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 2px; border: 0; border-radius: 3px;
+  background: transparent; color: var(--monitor-primary);
+  opacity: 0; pointer-events: none;
+}
+.pod-details > div:hover .pod-detail-copy,
+.pod-details > div:has(:focus-visible) .pod-detail-copy {
+  opacity: 1; pointer-events: auto;
+}
+.pod-detail-copy:hover { background: var(--monitor-surface-tint); }
+.pod-drawer-toolbar .btn-compact[aria-pressed="true"] {
+  background: var(--monitor-primary); color: white; border-color: var(--monitor-primary);
+}
+@media (hover: none) {
+  .pod-detail-copy { opacity: 1; pointer-events: auto; }
+}

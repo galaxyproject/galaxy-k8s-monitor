@@ -149,6 +149,7 @@ func main() {
 		BasePath:    normalizedBasePath,
 		StaticFiles: frontendRoot,
 		Handlers:    handlers,
+		PodHandlers: &api.PodHandlers{Client: coreClient, Namespace: *namespace},
 	})
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -34,6 +34,7 @@ type Props = {
   series: Series[];
   unit: string;
   onPointClick?: (sampleIndex: number) => void;
+  onOpenPod?: (group: string) => void;
   onPinTimestamp?: (timestamp: string | null) => void;
   activeRelativeTime?: string;
   zoomRange?: { startSampleIndex: number; endSampleIndex: number } | null;
@@ -117,6 +118,7 @@ export default function PerPodChart({
   series,
   unit,
   onPointClick,
+  onOpenPod,
   onPinTimestamp,
   activeRelativeTime,
   zoomRange
@@ -277,7 +279,7 @@ export default function PerPodChart({
                             style={{ background: podSeries.color }}
                             aria-hidden="true"
                           />
-                          <span className="horizon-pod-name">{podSeries.name}</span>
+                          {onOpenPod ? <button type="button" className="horizon-pod-name pod-details-link" onClick={() => onOpenPod(podSeries.name)} aria-label={`View pod details and logs for ${podSeries.name}`}>{podSeries.name}</button> : <span className="horizon-pod-name">{podSeries.name}</span>}
                         </div>
                         <div
                           className="horizon-pod-req"
