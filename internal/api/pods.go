@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"sort"
@@ -108,7 +109,7 @@ func (h *PodHandlers) ready(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func podError(w http.ResponseWriter, err error) {
+func podError(w http.ResponseWriter, err error, attrs ...any) {
 	status := http.StatusBadGateway
 	message := "Kubernetes request failed"
 	switch {
@@ -122,6 +123,10 @@ func podError(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 		message = "Logs are unavailable for the selected container or previous instance"
 	}
+	args := make([]any, 0, len(attrs)+4)
+	args = append(args, attrs...)
+	args = append(args, "status", status, "err", err)
+	slog.Warn("kubernetes pod api error", args...)
 	http.Error(w, message, status)
 }
 
@@ -138,7 +143,7 @@ func (h *PodHandlers) Pods(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	pods, err := h.Client.CoreV1().Pods(h.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		podError(w, err)
+		podError(w, err, "operation", "list_pods", "namespace", h.Namespace, "group", group)
 		return
 	}
 	result := []podDetails{}
@@ -166,7 +171,7 @@ func (h *PodHandlers) Logs(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	pod, err := h.Client.CoreV1().Pods(h.Namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		podError(w, err)
+		podError(w, err, "operation", "get_pod", "namespace", h.Namespace, "pod", name, "container", container)
 		return
 	}
 	// A rollout may replace a pod with the same name while a drawer is open.
@@ -193,12 +198,26 @@ func (h *PodHandlers) Logs(w http.ResponseWriter, r *http.Request) {
 	}
 	stream, err := h.Client.CoreV1().Pods(h.Namespace).GetLogs(name, options).Stream(ctx)
 	if err != nil {
-		podError(w, err)
+		podError(w, err,
+			"operation", "stream_logs",
+			"namespace", h.Namespace,
+			"pod", name,
+			"container", container,
+			"previous", options.Previous,
+			"download", download,
+		)
 		return
 	}
 	defer stream.Close()
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	if download {
+		slog.Info("pod log download started",
+			"namespace", h.Namespace,
+			"pod", name,
+			"container", container,
+			"previous", options.Previous,
+			"remote_addr", r.RemoteAddr,
+		)
 		suffix := ""
 		if options.Previous {
 			suffix = "-previous"

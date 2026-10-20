@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"sync"
@@ -32,6 +33,12 @@ func (b *Broadcaster) Unsubscribe(channel chan Sample) {
 	delete(b.subscribers, channel)
 	close(channel)
 	b.mu.Unlock()
+}
+
+func (b *Broadcaster) SubscriberCount() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.subscribers)
 }
 
 func (b *Broadcaster) Publish(sample Sample) {
@@ -123,7 +130,17 @@ func (handlers *Handlers) Stream(response http.ResponseWriter, request *http.Req
 	response.Header().Set("Connection", "keep-alive")
 
 	channel := handlers.broadcaster.Subscribe()
-	defer handlers.broadcaster.Unsubscribe(channel)
+	slog.Info("sse stream connected",
+		"remote_addr", request.RemoteAddr,
+		"active_subscribers", handlers.broadcaster.SubscriberCount(),
+	)
+	defer func() {
+		handlers.broadcaster.Unsubscribe(channel)
+		slog.Info("sse stream disconnected",
+			"remote_addr", request.RemoteAddr,
+			"active_subscribers", handlers.broadcaster.SubscriberCount(),
+		)
+	}()
 
 	for {
 		select {

@@ -42,6 +42,16 @@ func (r *RingBuffer) Append(sample model.Sample) {
 	r.start = (r.start + 1) % r.capacity
 }
 
+func (r *RingBuffer) Len() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.count
+}
+
+func (r *RingBuffer) Capacity() int {
+	return r.capacity
+}
+
 func (r *RingBuffer) All() []model.Sample {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

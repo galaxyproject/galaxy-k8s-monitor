@@ -3,9 +3,11 @@ package server
 import (
 	"encoding/json"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"galaxy-k8s-monitor/internal/api"
 )
@@ -72,9 +74,64 @@ func NewRouter(config Config) http.Handler {
 	return withJSONLogging(mux)
 }
 
+type statusResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusResponseWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusResponseWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (w *statusResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 func withJSONLogging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		next.ServeHTTP(response, request)
+		start := time.Now()
+		recorder := &statusResponseWriter{
+			ResponseWriter: response,
+			status:         http.StatusOK,
+		}
+
+		next.ServeHTTP(recorder, request)
+
+		if strings.HasSuffix(request.URL.Path, "/api/stream") && recorder.status < 400 {
+			return
+		}
+
+		duration := time.Since(start)
+		attrs := []any{
+			"method", request.Method,
+			"path", request.URL.Path,
+		}
+		if request.URL.RawQuery != "" {
+			attrs = append(attrs, "query", request.URL.RawQuery)
+		}
+		attrs = append(attrs,
+			"status", recorder.status,
+			"duration_ms", duration.Milliseconds(),
+			"remote_addr", request.RemoteAddr,
+		)
+
+		switch {
+		case recorder.status >= 500:
+			slog.Error("http request failed", attrs...)
+		case recorder.status >= 400:
+			slog.Warn("http request rejected", attrs...)
+		case strings.HasSuffix(request.URL.Path, "/api/pods") || strings.HasSuffix(request.URL.Path, "/api/pod-logs"):
+			slog.Info("http api request", attrs...)
+		default:
+			slog.Debug("http request", attrs...)
+		}
 	})
 }
 

@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"errors"
 	"testing"
 
 	"galaxy-k8s-monitor/internal/model"
@@ -97,4 +98,27 @@ container_network_transmit_packets_dropped_total{container="",id="/",image="",in
 		t.Fatalf("expected RxBytes unchanged at 9465733269, got %d", netSample.RxBytes)
 	}
 }
+
+func TestClassifyDiskThresholdAndErrorDeduplication(t *testing.T) {
+	if level, _ := classifyDiskThreshold(50, 100); level != "normal" {
+		t.Fatalf("expected normal at 50%%, got %s", level)
+	}
+	if level, _ := classifyDiskThreshold(85, 100); level != "warning" {
+		t.Fatalf("expected warning at 85%%, got %s", level)
+	}
+	if level, _ := classifyDiskThreshold(92, 100); level != "critical" {
+		t.Fatalf("expected critical at 92%%, got %s", level)
+	}
+
+	c := &Collector{namespace: "galaxy"}
+	c.recordError("pods", errors.New("connection refused"))
+	if c.errState["pods"] != "connection refused" {
+		t.Fatalf("expected errState[pods] to be recorded")
+	}
+	c.recordRecovery("pods")
+	if _, exists := c.errState["pods"]; exists {
+		t.Fatalf("expected errState[pods] to be cleared on recovery")
+	}
+}
+
 

@@ -1,17 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"embed"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,12 +25,95 @@ import (
 	"galaxy-k8s-monitor/internal/model"
 	"galaxy-k8s-monitor/internal/store"
 
-	"encoding/json"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
 )
+
+const logTimeFormat = "2006-01-02 15:04:05,000"
+
+type hybridLogHandler struct {
+	mu          *sync.Mutex
+	out         io.Writer
+	attrBuf     *bytes.Buffer
+	attrHandler slog.Handler
+}
+
+func newHybridLogHandler(out io.Writer, level slog.Level) *hybridLogHandler {
+	attrBuf := &bytes.Buffer{}
+	attrHandler := slog.NewTextHandler(attrBuf, &slog.HandlerOptions{
+		Level: level,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if len(groups) == 0 && (a.Key == slog.TimeKey || a.Key == slog.LevelKey || a.Key == slog.MessageKey) {
+				return slog.Attr{}
+			}
+			return a
+		},
+	})
+	return &hybridLogHandler{
+		mu:          &sync.Mutex{},
+		out:         out,
+		attrBuf:     attrBuf,
+		attrHandler: attrHandler,
+	}
+}
+
+func (h *hybridLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.attrHandler.Enabled(ctx, level)
+}
+
+func (h *hybridLogHandler) Handle(ctx context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.attrBuf.Reset()
+	if err := h.attrHandler.Handle(ctx, r); err != nil {
+		return err
+	}
+	attrs := bytes.TrimSpace(h.attrBuf.Bytes())
+
+	var line bytes.Buffer
+	line.WriteString(r.Time.Format(logTimeFormat))
+	line.WriteByte(' ')
+	line.WriteString(r.Level.String())
+	line.WriteByte(' ')
+	line.WriteString(r.Message)
+	if len(attrs) > 0 {
+		line.WriteByte(' ')
+		line.Write(attrs)
+	}
+	line.WriteByte('\n')
+
+	_, err := h.out.Write(line.Bytes())
+	return err
+}
+
+func (h *hybridLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &hybridLogHandler{
+		mu:          h.mu,
+		out:         h.out,
+		attrBuf:     h.attrBuf,
+		attrHandler: h.attrHandler.WithAttrs(attrs),
+	}
+}
+
+func (h *hybridLogHandler) WithGroup(name string) slog.Handler {
+	return &hybridLogHandler{
+		mu:          h.mu,
+		out:         h.out,
+		attrBuf:     h.attrBuf,
+		attrHandler: h.attrHandler.WithGroup(name),
+	}
+}
+
+func initLogger(verbose bool) {
+	level := slog.LevelInfo
+	if verbose {
+		level = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(newHybridLogHandler(os.Stderr, level)))
+}
 
 //go:embed frontend/dist
 var embeddedFrontend embed.FS
@@ -72,8 +159,10 @@ func main() {
 		kubeconfig     = flag.String("kubeconfig", "", "Path to kubeconfig (optional; falls back to KUBECONFIG env var or in-cluster)")
 		basePath       = flag.String("base-path", "/", "Optional base path prefix, for example /monitor")
 		seedFile       = flag.String("seed-file", "", "Optional JSON file of samples to pre-load into the ring buffer")
+		verbose        = flag.Bool("verbose", false, "Enable debug-level logging")
 	)
 	flag.Parse()
+	initLogger(*verbose)
 
 	normalizedBasePath := normalizeBasePath(*basePath)
 	capacity := int((time.Duration(*retentionHours) * time.Hour) / *interval)
@@ -85,23 +174,27 @@ func main() {
 	if *seedFile != "" {
 		seeded, err := loadSeedSamples(*seedFile)
 		if err != nil {
-			log.Fatalf("failed to load seed file %s: %v", *seedFile, err)
+			slog.Error("failed to load seed file", "file", *seedFile, "err", err)
+			os.Exit(1)
 		}
 		for _, sample := range seeded {
 			ring.Append(sample)
 		}
-		log.Printf("loaded %d samples from seed file %s", len(seeded), *seedFile)
+		slog.Info("loaded seed samples", "count", len(seeded), "file", *seedFile)
 	}
 
 	var coreClient kubernetes.Interface
 	var metricsClient metricsclientset.Interface
-	if config, err := buildKubeConfig(*kubeconfig); err == nil {
+	authSource := "offline-seed"
+	if config, source, err := buildKubeConfig(*kubeconfig); err == nil {
+		authSource = source
 		coreClient, _ = kubernetes.NewForConfig(config)
 		metricsClient, _ = metricsclientset.NewForConfig(config)
 	} else if *seedFile == "" {
-		log.Fatalf("failed to build kubernetes config: %v", err)
+		slog.Error("failed to build kubernetes config", "err", err)
+		os.Exit(1)
 	} else {
-		log.Printf("running in offline seed-only mode (no kubernetes config: %v)", err)
+		slog.Warn("running in offline seed-only mode", "err", err)
 	}
 
 	broadcaster := api.NewBroadcaster()
@@ -141,7 +234,8 @@ func main() {
 
 	frontendRoot, err := fs.Sub(embeddedFrontend, "frontend/dist")
 	if err != nil {
-		log.Fatalf("failed to initialize embedded frontend: %v", err)
+		slog.Error("failed to initialize embedded frontend", "err", err)
+		os.Exit(1)
 	}
 
 	router := server.NewRouter(server.Config{
@@ -175,37 +269,53 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Printf("starting galaxy-k8s-monitor on %s (base path: %s, namespace: %s, interval: %s)", *listenAddress, normalizedBasePath, *namespace, interval.String())
+	slog.Info("starting galaxy-k8s-monitor",
+		"address", *listenAddress,
+		"base_path", normalizedBasePath,
+		"namespace", *namespace,
+		"interval", interval.String(),
+		"retention_hours", *retentionHours,
+		"buffer_capacity", capacity,
+		"kube_auth", authSource,
+	)
 
 	go func() {
 		<-ctx.Done()
+		slog.Info("shutting down galaxy-k8s-monitor")
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 		if shutdownErr := httpServer.Shutdown(shutdownCtx); shutdownErr != nil {
-			log.Printf("http shutdown error: %v", shutdownErr)
+			slog.Error("http shutdown error", "err", shutdownErr)
+			return
 		}
+		slog.Info("galaxy-k8s-monitor stopped")
 	}()
 
 	if err = httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("http server failed: %v", err)
+		slog.Error("http server failed", "err", err)
+		os.Exit(1)
 	}
 }
 
-func buildKubeConfig(kubeconfigFlag string) (*rest.Config, error) {
+func buildKubeConfig(kubeconfigFlag string) (*rest.Config, string, error) {
 	if kubeconfigFlag != "" {
-		return clientcmd.BuildConfigFromFlags("", kubeconfigFlag)
+		cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigFlag)
+		return cfg, "flag:" + kubeconfigFlag, err
 	}
 
 	if kubeconfigEnv := os.Getenv("KUBECONFIG"); kubeconfigEnv != "" {
-		return clientcmd.BuildConfigFromFlags("", kubeconfigEnv)
+		cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigEnv)
+		return cfg, "env:KUBECONFIG", err
 	}
 
 	if homeDir, err := os.UserHomeDir(); err == nil {
 		defaultKubeConfig := fmt.Sprintf("%s/.kube/config", homeDir)
 		if _, statErr := os.Stat(defaultKubeConfig); statErr == nil {
-			return clientcmd.BuildConfigFromFlags("", defaultKubeConfig)
+			cfg, cfgErr := clientcmd.BuildConfigFromFlags("", defaultKubeConfig)
+			return cfg, defaultKubeConfig, cfgErr
 		}
 	}
 
-	return rest.InClusterConfig()
+	cfg, err := rest.InClusterConfig()
+	return cfg, "in-cluster", err
 }

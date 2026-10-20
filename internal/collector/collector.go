@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strconv"
@@ -75,6 +77,8 @@ type kubeletStatsSummary struct {
 	} `json:"pods"`
 }
 
+const heartbeatInterval = 15 * time.Minute
+
 type Collector struct {
 	coreClient    kubernetes.Interface
 	metricsClient metricsclientset.Interface
@@ -82,6 +86,17 @@ type Collector struct {
 	store         *store.RingBuffer
 	interval      time.Duration
 	onSample      func(model.Sample)
+
+	initialLogged    bool
+	lastHeartbeat    time.Time
+	errState         map[string]string
+	prevDiskPressure bool
+	prevDiskLevels   map[string]string
+	hasPrevNetTotals bool
+	prevRxDropped    int64
+	prevTxDropped    int64
+	prevRxErrors     int64
+	prevTxErrors     int64
 }
 
 func New(
@@ -93,12 +108,44 @@ func New(
 	onSample func(model.Sample),
 ) *Collector {
 	return &Collector{
-		coreClient:    coreClient,
-		metricsClient: metricsClient,
-		namespace:     namespace,
-		store:         store,
-		interval:      interval,
-		onSample:      onSample,
+		coreClient:     coreClient,
+		metricsClient:  metricsClient,
+		namespace:      namespace,
+		store:          store,
+		interval:       interval,
+		onSample:       onSample,
+		errState:       map[string]string{},
+		prevDiskLevels: map[string]string{},
+	}
+}
+
+func (collector *Collector) recordError(source string, err error, attrs ...any) {
+	if err == nil {
+		return
+	}
+	if collector.errState == nil {
+		collector.errState = map[string]string{}
+	}
+	msg := err.Error()
+	if collector.errState[source] == msg {
+		return
+	}
+	collector.errState[source] = msg
+	args := []any{"source", source, "namespace", collector.namespace}
+	args = append(args, attrs...)
+	args = append(args, "err", err)
+	slog.Warn("collector source failed", args...)
+}
+
+func (collector *Collector) recordRecovery(source string, attrs ...any) {
+	if collector.errState == nil {
+		return
+	}
+	if prev, ok := collector.errState[source]; ok && prev != "" {
+		delete(collector.errState, source)
+		args := []any{"source", source, "namespace", collector.namespace}
+		args = append(args, attrs...)
+		slog.Info("collector source recovered", args...)
 	}
 }
 
@@ -424,19 +471,23 @@ func (collector *Collector) collectNodeTelemetry(ctx context.Context, nodeList *
 			continue
 		}
 
+		statsSource := "kubelet_stats:" + node.Name
 		raw, err := restClient.Get().
 			Resource("nodes").
 			Name(node.Name).
 			SubResource("proxy", "stats", "summary").
 			DoRaw(ctx)
 		if err != nil {
+			collector.recordError(statsSource, err, "node", node.Name)
 			continue
 		}
 
 		var summary kubeletStatsSummary
 		if err := json.Unmarshal(raw, &summary); err != nil {
+			collector.recordError(statsSource, err, "node", node.Name)
 			continue
 		}
+		collector.recordRecovery(statsSource, "node", node.Name)
 
 		if summary.Node.Fs != nil && summary.Node.Fs.CapacityBytes > 0 {
 			disk.NodeCapacityBytes += summary.Node.Fs.CapacityBytes
@@ -504,12 +555,16 @@ func (collector *Collector) collectNodeTelemetry(ctx context.Context, nodeList *
 			}
 		}
 
+		cadvisorSource := "cadvisor:" + node.Name
 		cadvisorRaw, err := restClient.Get().
 			Resource("nodes").
 			Name(node.Name).
 			SubResource("proxy", "metrics", "cadvisor").
 			DoRaw(ctx)
-		if err == nil && len(cadvisorRaw) > 0 {
+		if err != nil {
+			collector.recordError(cadvisorSource, err, "node", node.Name)
+		} else if len(cadvisorRaw) > 0 {
+			collector.recordRecovery(cadvisorSource, "node", node.Name)
 			if enrichDiskFromCadvisor(cadvisorRaw, disk) {
 				hasDiskData = true
 			}
@@ -533,17 +588,24 @@ func (collector *Collector) collectNodeTelemetry(ctx context.Context, nodeList *
 func (collector *Collector) collectOnce(ctx context.Context) {
 	podList, err := collector.coreClient.CoreV1().Pods(collector.namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
+		collector.recordError("pods", err)
 		return
 	}
+	collector.recordRecovery("pods")
 
 	metricsList, err := collector.metricsClient.MetricsV1beta1().PodMetricses(collector.namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
+		collector.recordError("pod_metrics", err)
 		return
 	}
+	collector.recordRecovery("pod_metrics")
 
 	nodeList, err := collector.coreClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
+		collector.recordError("nodes", err)
 		nodeList = nil
+	} else {
+		collector.recordRecovery("nodes")
 	}
 
 	timestamp := time.Now().UTC()
@@ -628,8 +690,194 @@ func (collector *Collector) collectOnce(ctx context.Context) {
 	}
 
 	collector.store.Append(sample)
+	collector.logSampleEvents(sample, len(podList.Items), nodeList)
 	if collector.onSample != nil {
 		collector.onSample(sample)
+	}
+}
+
+func formatGiB(bytesVal int64) string {
+	return fmt.Sprintf("%.2f", float64(bytesVal)/(1024*1024*1024))
+}
+
+func formatPct(used, capacity int64) string {
+	if capacity <= 0 {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.1f%%", (float64(used)/float64(capacity))*100)
+}
+
+func discoveredDisksList(disk *model.DiskSample) string {
+	if disk == nil {
+		return "none"
+	}
+	var names []string
+	if disk.NodeCapacityBytes > 0 {
+		names = append(names, "root")
+	}
+	if disk.GalaxyPVCCapacityBytes > 0 {
+		names = append(names, "galaxy-pvc")
+	}
+	if disk.PostgresCapacityBytes > 0 {
+		names = append(names, "postgres")
+	}
+	if len(names) == 0 {
+		return "none"
+	}
+	return strings.Join(names, ",")
+}
+
+func classifyDiskThreshold(used, capacity int64) (string, float64) {
+	if capacity <= 0 {
+		return "normal", 0
+	}
+	pct := (float64(used) / float64(capacity)) * 100
+	switch {
+	case pct >= 90:
+		return "critical", pct
+	case pct >= 85:
+		return "warning", pct
+	default:
+		return "normal", pct
+	}
+}
+
+func (collector *Collector) checkDiskThresholdTransition(diskName string, used, capacity int64) {
+	if capacity <= 0 {
+		return
+	}
+	if collector.prevDiskLevels == nil {
+		collector.prevDiskLevels = map[string]string{}
+	}
+	prev := collector.prevDiskLevels[diskName]
+	if prev == "" {
+		prev = "normal"
+	}
+	level, pct := classifyDiskThreshold(used, capacity)
+	if level == prev {
+		return
+	}
+	collector.prevDiskLevels[diskName] = level
+	attrs := []any{
+		"disk", diskName,
+		"used_pct", fmt.Sprintf("%.1f%%", pct),
+		"used_gib", formatGiB(used),
+		"capacity_gib", formatGiB(capacity),
+	}
+	switch level {
+	case "critical":
+		slog.Warn("disk usage crossed critical eviction threshold (>=90%)", attrs...)
+	case "warning":
+		slog.Warn("disk usage crossed garbage-collection threshold (>=85%)", attrs...)
+	default:
+		slog.Info("disk usage returned to normal (<85%)", attrs...)
+	}
+}
+
+func (collector *Collector) logSampleEvents(sample model.Sample, rawPodCount int, nodeList *corev1.NodeList) {
+	nodeCount := 0
+	if nodeList != nil {
+		nodeCount = len(nodeList.Items)
+	}
+
+	var totalCPUMilli int64
+	var totalMemBytes int64
+	for _, p := range sample.Pods {
+		totalCPUMilli += p.CPUUsage
+		totalMemBytes += p.MemUsage
+	}
+
+	if !collector.initialLogged {
+		collector.initialLogged = true
+		collector.lastHeartbeat = sample.Timestamp
+		netStatus := "unavailable"
+		if sample.Network != nil {
+			netStatus = "ok"
+		}
+		slog.Info("initial cluster sample collected",
+			"namespace", collector.namespace,
+			"pods", rawPodCount,
+			"pod_groups", len(sample.Pods),
+			"nodes", nodeCount,
+			"cpu_used_cores", fmt.Sprintf("%.2f", float64(totalCPUMilli)/1000.0),
+			"cpu_capacity_cores", fmt.Sprintf("%.2f", float64(sample.ClusterCPUCapacityMilli)/1000.0),
+			"mem_used_gib", formatGiB(totalMemBytes),
+			"mem_capacity_gib", formatGiB(sample.ClusterMemoryCapacityByte),
+			"disks", discoveredDisksList(sample.Disk),
+			"network", netStatus,
+		)
+	}
+
+	if sample.Disk != nil {
+		if sample.Disk.DiskPressure && !collector.prevDiskPressure {
+			slog.Warn("node DiskPressure condition is active", "namespace", collector.namespace)
+		} else if !sample.Disk.DiskPressure && collector.prevDiskPressure {
+			slog.Info("node DiskPressure condition cleared", "namespace", collector.namespace)
+		}
+		collector.prevDiskPressure = sample.Disk.DiskPressure
+
+		collector.checkDiskThresholdTransition("root", sample.Disk.NodeUsedBytes, sample.Disk.NodeCapacityBytes)
+		collector.checkDiskThresholdTransition("galaxy-pvc", sample.Disk.GalaxyPVCUsedBytes, sample.Disk.GalaxyPVCCapacityBytes)
+		collector.checkDiskThresholdTransition("postgres", sample.Disk.PostgresUsedBytes, sample.Disk.PostgresCapacityBytes)
+	}
+
+	if sample.Network != nil {
+		if collector.hasPrevNetTotals {
+			rxDropDelta := sample.Network.RxDropped - collector.prevRxDropped
+			txDropDelta := sample.Network.TxDropped - collector.prevTxDropped
+			rxErrDelta := sample.Network.RxErrors - collector.prevRxErrors
+			txErrDelta := sample.Network.TxErrors - collector.prevTxErrors
+			if rxDropDelta > 0 || txDropDelta > 0 || rxErrDelta > 0 || txErrDelta > 0 {
+				slog.Warn("network packet drops or errors detected",
+					"rx_dropped_delta", rxDropDelta,
+					"tx_dropped_delta", txDropDelta,
+					"rx_errors_delta", rxErrDelta,
+					"tx_errors_delta", txErrDelta,
+					"total_rx_dropped", sample.Network.RxDropped,
+					"total_tx_dropped", sample.Network.TxDropped,
+					"total_rx_errors", sample.Network.RxErrors,
+					"total_tx_errors", sample.Network.TxErrors,
+				)
+			}
+		}
+		collector.hasPrevNetTotals = true
+		collector.prevRxDropped = sample.Network.RxDropped
+		collector.prevTxDropped = sample.Network.TxDropped
+		collector.prevRxErrors = sample.Network.RxErrors
+		collector.prevTxErrors = sample.Network.TxErrors
+	}
+
+	if !collector.lastHeartbeat.IsZero() && sample.Timestamp.Sub(collector.lastHeartbeat) >= heartbeatInterval {
+		collector.lastHeartbeat = sample.Timestamp
+		attrs := []any{
+			"namespace", collector.namespace,
+			"samples_buffered", fmt.Sprintf("%d/%d", collector.store.Len(), collector.store.Capacity()),
+			"pod_groups", len(sample.Pods),
+			"cpu_cores", fmt.Sprintf("%.2f/%.2f", float64(totalCPUMilli)/1000.0, float64(sample.ClusterCPUCapacityMilli)/1000.0),
+			"mem_gib", fmt.Sprintf("%s/%s", formatGiB(totalMemBytes), formatGiB(sample.ClusterMemoryCapacityByte)),
+		}
+		if sample.Disk != nil {
+			attrs = append(attrs, "root_disk_used", formatPct(sample.Disk.NodeUsedBytes, sample.Disk.NodeCapacityBytes))
+			if sample.Disk.GalaxyPVCCapacityBytes > 0 {
+				attrs = append(attrs, "galaxy_pvc_used", formatPct(sample.Disk.GalaxyPVCUsedBytes, sample.Disk.GalaxyPVCCapacityBytes))
+			}
+			if sample.Disk.PostgresCapacityBytes > 0 {
+				attrs = append(attrs, "postgres_disk_used", formatPct(sample.Disk.PostgresUsedBytes, sample.Disk.PostgresCapacityBytes))
+			}
+		}
+		if sample.Network != nil {
+			attrs = append(attrs,
+				"net_rx_gib", formatGiB(sample.Network.RxBytes),
+				"net_tx_gib", formatGiB(sample.Network.TxBytes),
+			)
+		}
+		slog.Info("collector heartbeat", attrs...)
+	} else {
+		slog.Debug("sample collected",
+			"namespace", collector.namespace,
+			"pod_groups", len(sample.Pods),
+			"samples_buffered", collector.store.Len(),
+		)
 	}
 }
 
