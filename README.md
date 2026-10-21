@@ -87,6 +87,18 @@ make backend-build
 
 ## Build and Push Container
 
+The **Build and publish Docker image** GitHub Actions workflow builds the
+Linux/amd64 image on pushes to `main` and publishes it to Docker Hub as
+`afgane/galaxy-k8s-monitor:latest` and `afgane/galaxy-k8s-monitor:sha-<commit>`.
+It can also be run manually from `main` using **Run workflow**.
+
+Configure repository or organization Actions secrets `DOCKERHUB_USERNAME`
+and `DOCKERHUB_TOKEN`. The token needs write access to
+`afgane/galaxy-k8s-monitor`. The `gcp-runner` runner needs Docker and a current
+GitHub Actions runner compatible with Node.js 24 actions.
+
+To build and push locally:
+
 ```bash
 # Set registry if different from 'afgane'
 # export REGISTRY=my-registry
