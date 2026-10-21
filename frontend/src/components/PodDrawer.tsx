@@ -6,7 +6,15 @@ import React, {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Copy, Download, RefreshCw, X } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Download,
+  RefreshCw,
+  X,
+} from 'lucide-react';
 import PodManifest from './PodManifest';
 
 type Container = {
@@ -41,6 +49,66 @@ export default function PodDrawer({ group, live, onClose }: Props) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const logRef = useRef<HTMLPreElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    y: number;
+    height: number;
+  } | null>(null);
+  const followLogBottom = useRef(true);
+  const [viewportHeight, setViewportHeight] = useState(
+    () => window.innerHeight,
+  );
+  const [preferredHeight, setPreferredHeight] = useState(50);
+  const [resizing, setResizing] = useState(false);
+  const [infoCollapsed, setInfoCollapsed] = useState(false);
+  const minimumHeight = Math.min(50, (280 / viewportHeight) * 100);
+  const drawerHeight = Math.max(minimumHeight, Math.min(90, preferredHeight));
+  const infoId = `${titleId}-info`;
+  const bodyId = `${titleId}-body`;
+
+  useEffect(() => {
+    const resize = () => setViewportHeight(window.innerHeight);
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  function resizeFromPointer(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (drag?.pointerId !== event.pointerId) return;
+    const height =
+      ((drag.height + drag.y - event.clientY) / window.innerHeight) * 100;
+    setPreferredHeight(
+      Math.max(
+        Math.min(50, (280 / window.innerHeight) * 100),
+        Math.min(90, height),
+      ),
+    );
+  }
+
+  function finishResize(event: React.PointerEvent<HTMLDivElement>) {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    setResizing(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function resizeFromKeyboard(event: React.KeyboardEvent<HTMLDivElement>) {
+    const step = event.shiftKey ? 10 : 5;
+    const heights: Record<string, number> = {
+      ArrowUp: drawerHeight + step,
+      ArrowDown: drawerHeight - step,
+      PageUp: drawerHeight + 10,
+      PageDown: drawerHeight - 10,
+      Home: minimumHeight,
+      End: 90,
+    };
+    if (!(event.key in heights)) return;
+    event.preventDefault();
+    setPreferredHeight(
+      Math.max(minimumHeight, Math.min(90, heights[event.key])),
+    );
+  }
   const [pods, setPods] = useState<Pod[]>([]);
   const [podUID, setPodUID] = useState('');
   const [containerName, setContainerName] = useState('');
@@ -158,9 +226,16 @@ export default function PodDrawer({ group, live, onClose }: Props) {
 
   useLayoutEffect(() => {
     if (!logsLoading && !logsError && logRef.current) {
+      followLogBottom.current = true;
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
   }, [logs, logsLoading, logsError]);
+
+  // Resizing should keep the tail visible only when the reader was already there.
+  useLayoutEffect(() => {
+    if (followLogBottom.current && logRef.current)
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [drawerHeight, infoCollapsed, viewportHeight]);
 
   useEffect(() => {
     if (!copiedField) return;
@@ -264,6 +339,8 @@ export default function PodDrawer({ group, live, onClose }: Props) {
     <dialog
       ref={dialogRef}
       className="pod-drawer"
+      style={{ height: `${drawerHeight}dvh` }}
+      data-resizing={resizing ? 'true' : 'false'}
       data-no-print
       aria-labelledby={titleId}
       onCancel={(event) => {
@@ -283,10 +360,40 @@ export default function PodDrawer({ group, live, onClose }: Props) {
         }
       }}
     >
+      <div
+        className="pod-drawer-resize"
+        role="separator"
+        tabIndex={0}
+        aria-label="Resize pod details drawer"
+        aria-orientation="horizontal"
+        aria-controls={bodyId}
+        aria-valuemin={Math.round(minimumHeight)}
+        aria-valuemax={90}
+        aria-valuenow={Math.round(drawerHeight)}
+        aria-valuetext={`${Math.round(drawerHeight)}% of screen height`}
+        title="Drag to resize. Use Up/Down arrows to resize with the keyboard."
+        onKeyDown={resizeFromKeyboard}
+        onPointerDown={(event) => {
+          if (event.button !== 0 || !event.isPrimary) return;
+          event.preventDefault();
+          event.currentTarget.focus();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          dragRef.current = {
+            pointerId: event.pointerId,
+            y: event.clientY,
+            height: dialogRef.current?.getBoundingClientRect().height ?? 0,
+          };
+          setResizing(true);
+        }}
+        onPointerMove={resizeFromPointer}
+        onPointerUp={finishResize}
+        onPointerCancel={finishResize}
+        onLostPointerCapture={finishResize}
+      />
       <header className="pod-drawer-header">
         <h2 id={titleId}>{group}</h2>
         {pod && contentSwitch}
-        {live && (
+        {live && (!infoCollapsed || !pod) && (
           <>
             {pods.length > 1 && (
               <label className="pod-drawer-field">
@@ -336,20 +443,38 @@ export default function PodDrawer({ group, live, onClose }: Props) {
             </button>
           </>
         )}
-        <button
-          type="button"
-          className="btn-compact pod-drawer-close"
-          aria-label="Close pod details"
-          onClick={onClose}
-          autoFocus
-        >
-          <X size={18} aria-hidden="true" />
-        </button>
+        <div className="pod-drawer-actions">
+          {pod && (
+            <button
+              type="button"
+              className="btn-compact"
+              aria-expanded={!infoCollapsed}
+              aria-controls={infoId}
+              onClick={() => setInfoCollapsed((value) => !value)}
+            >
+              {infoCollapsed ? (
+                <ChevronDown size={14} aria-hidden="true" />
+              ) : (
+                <ChevronUp size={14} aria-hidden="true" />
+              )}
+              {infoCollapsed ? 'Show pod info' : 'Hide pod info'}
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn-compact pod-drawer-close"
+            aria-label="Close pod details"
+            onClick={onClose}
+            autoFocus
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
       </header>
       <span className="sr-only" role="status">
         {copyMessage}
       </span>
-      <div className="pod-drawer-body">
+      <div className="pod-drawer-body" id={bodyId}>
         {!live ? (
           <p role="status">
             Live pod details and logs are not available for uploaded snapshots.
@@ -369,7 +494,12 @@ export default function PodDrawer({ group, live, onClose }: Props) {
               </p>
             )}
             {pod && (
-              <dl className="pod-details" aria-label="Current pod details">
+              <dl
+                className="pod-details"
+                id={infoId}
+                hidden={infoCollapsed}
+                aria-label="Current pod details"
+              >
                 {details.map(([label, value]) => (
                   <div key={label}>
                     <dt>{label}</dt>
@@ -398,11 +528,7 @@ export default function PodDrawer({ group, live, onClose }: Props) {
               </dl>
             )}
             {pod && view === 'manifest' && (
-              <PodManifest
-                key={pod.uid}
-                name={pod.name}
-                uid={pod.uid}
-              />
+              <PodManifest key={pod.uid} name={pod.name} uid={pod.uid} />
             )}
             {pod && view === 'logs' && (
               <section className="pod-log-section" aria-label="Pod logs">
@@ -466,6 +592,14 @@ export default function PodDrawer({ group, live, onClose }: Props) {
                 {container && !logsLoading && !logsError && (
                   <pre
                     ref={logRef}
+                    onScroll={(event) => {
+                      const element = event.currentTarget;
+                      followLogBottom.current =
+                        element.scrollHeight -
+                          element.clientHeight -
+                          element.scrollTop <
+                        2;
+                    }}
                     className="pod-logs"
                     tabIndex={0}
                     aria-label={`Logs for ${pod.name}, ${container.name}`}

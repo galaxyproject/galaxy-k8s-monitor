@@ -1800,7 +1800,8 @@ button:disabled {
   width: 100%;
   height: 50dvh;
   max-width: 100%;
-  max-height: 50dvh;
+  max-height: 90dvh;
+  min-height: min(280px, 50dvh);
   padding: 0;
   border: 0;
   border-top: 1px solid var(--monitor-border-panel);
@@ -1819,7 +1820,7 @@ button:disabled {
   border-bottom: 1px solid var(--monitor-border-panel);
 }
 .pod-drawer-header h2 { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
-.pod-drawer-close { margin-left: auto; }
+.pod-drawer-actions { display: flex; align-items: center; flex-shrink: 0; gap: .5rem; margin-left: auto; }
 .pod-drawer-body {
   display: flex; flex-direction: column; flex: 1; min-height: 0;
   overflow: hidden; padding: .5rem 1rem; gap: .4rem;
@@ -1884,3 +1885,22 @@ button:disabled {
 }
 .pod-content-views { display: inline-flex; align-items: center; gap: .25rem; }
 .pod-manifest { tab-size: 2; }
+
+.pod-drawer-resize {
+  position: relative; flex-shrink: 0; height: 10px;
+  cursor: ns-resize; touch-action: none;
+  background: var(--monitor-surface);
+}
+.pod-drawer-resize::after {
+  content: ''; position: absolute; top: 3px; left: 50%;
+  width: 44px; height: 3px; transform: translateX(-50%);
+  border-radius: 999px; background: var(--monitor-border-control);
+}
+.pod-drawer-resize:hover::after,
+.pod-drawer-resize:focus-visible::after,
+.pod-drawer[data-resizing="true"] .pod-drawer-resize::after {
+  background: var(--monitor-primary);
+}
+.pod-drawer-resize:focus-visible { outline-offset: -3px; }
+.pod-drawer[data-resizing="true"] { user-select: none; }
+.pod-details[hidden] { display: none; }

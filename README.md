@@ -134,8 +134,11 @@ Open:
 ## Pod details and logs
 
 On the Compute tab, select a pod-group name in either horizon chart to open
-its details drawer. Chart datapoints still pin the selected sample. Details
-and logs describe current Kubernetes pods, not the historical chart time.
+its details drawer. Drag the drawer’s top edge to resize it, or focus that
+edge and use the Up/Down arrow keys (Home/End select the minimum/maximum).
+Use **Hide pod info** to collapse the metadata and its selection controls;
+**Show pod info** restores them. Chart datapoints still pin the selected sample.
+Details and logs describe current Kubernetes pods, not the historical chart time.
 
 A single matching pod and its single regular container load automatically.
 If there are replicas, choose a pod; if there are multiple regular
